@@ -1,0 +1,59 @@
+{
+  "nodes": {
+    "knappy": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781897130,
+        "narHash": "sha256-qOPWqownJE+rL08pfILXNo7cYok6uXA0/AjVi10NUOs=",
+        "path": "/home/andrew/Documents/Projects/knappy",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/andrew/Documents/Projects/knappy",
+        "type": "path"
+      }
+    },
+    "loci-core": {
+      "inputs": {
+        "knappy": "knappy",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1782434398,
+        "narHash": "sha256-OtHZAhnNUDxpVgf/b9aZGuui4ejOM6zP2eWOxXO4tqc=",
+        "path": "/home/andrew/Documents/Projects/loci-core",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/andrew/Documents/Projects/loci-core",
+        "type": "path"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1781577229,
+        "narHash": "sha256-lrp67w8AulE9Ks53n27I45ADSzbOCn4H+CNW1Ck8B+8=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "567a49d1913ce81ac6e9582e3553dd90a955875f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "loci-core": "loci-core",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

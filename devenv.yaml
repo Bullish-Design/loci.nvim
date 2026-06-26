@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+#
+# loci.nvim — a repoman-managed devenv repo.
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+
+  # RepoMan meta-module: one import wires in the selected *man managers and their
+  # tasks/scripts/toolchains. Dev: a local path to repoman's modules/ dir.
+  # Fleet: github:Bullish-Design/repoman?dir=modules&ref=vX.Y.Z
+  repoman:
+    url: path:/home/andrew/Documents/Projects/repoman/modules
+    flake: false
+
+imports:
+  - repoman

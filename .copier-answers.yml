@@ -1,0 +1,10 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v0.2.0
+_src_path: template-nix
+author_email: BullishDesignEngineering@gmail.com
+author_name: Bullish Design
+description: The loci Neovim plugin (thin loci-lsp client) + the loci-lsp server binary.
+module_class: none
+project_name: loci.nvim
+repoman_dev_root: /home/andrew/Documents/Projects
+
