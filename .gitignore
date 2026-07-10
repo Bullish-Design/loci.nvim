@@ -16,3 +16,10 @@ __pycache__/
 
 # copyroom scratch (template-edit previews/worktrees)
 .copyroom/
+
+# jj (colocated VCS working copy)
+.jj/
+
+# nix build results
+result
+result-*
