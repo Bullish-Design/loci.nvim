@@ -312,14 +312,14 @@ local function apply_editor_state(es)
   local resession = es.resession
   if present(resession) and present(resession.session_name) then
     pcall(function()
-      require("resession").load_tab(resession.session_name, { silence_errors = true })
+      require("resession").load(resession.session_name, { silence_errors = true })
     end)
   end
 
   local wayfinder = es.wayfinder
   if present(wayfinder) and present(wayfinder.trail_name) then
     pcall(function()
-      require("wayfinder").trail.load_named(wayfinder.trail_name)
+      require("wayfinder").trail_load_named(wayfinder.trail_name)
     end)
   end
 
