@@ -16,11 +16,12 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    # loci-lsp is built FROM the loci-core engine repo (absolute path in dev — a
-    # relative path:../loci-core escapes this flake's tree and is rejected in pure
-    # eval; the fleet form is github:…?ref=<tag>). nix-meta unifies nixpkgs upward.
+    # loci-lsp is built FROM the loci-core engine repo. Pinned to a pushed rev so the
+    # published flake is reproducible + fleet-consumable (nix-meta unifies nixpkgs
+    # upward). For local engine dev, override this input against a working checkout:
+    #   nix build --override-input loci-core path:../loci-core .#loci-lsp
     loci-core = {
-      url = "path:/home/andrew/Documents/Projects/loci-core";
+      url = "github:Bullish-Design/loci-core?ref=02be76d";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
