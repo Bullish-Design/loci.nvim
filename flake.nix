@@ -20,8 +20,13 @@
     # published flake is reproducible + fleet-consumable (nix-meta unifies nixpkgs
     # upward). For local engine dev, override this input against a working checkout:
     #   nix build --override-input loci-core path:../loci-core .#loci-lsp
+    # loci-core is PRIVATE, so `github:` 404s on headless boxes (the archive API
+    # is token-gated). Use the fleet git+ssh form (like zelligate/nix-secrets) so
+    # boxes with an authorized SSH key can fetch it; the lock still pins an exact
+    # rev for reproducibility. For local engine dev, override this input:
+    #   nix build --override-input loci-core path:../loci-core .#loci-lsp
     loci-core = {
-      url = "github:Bullish-Design/loci-core?ref=02be76d";
+      url = "git+ssh://git@github.com/Bullish-Design/loci-core.git?ref=main";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
