@@ -4,7 +4,7 @@
 { vimUtils, lib }:
 vimUtils.buildVimPlugin {
   pname = "loci-nvim";
-  version = "0-unstable-2026-06-25"; # plugin is versionless; date-stamped
+  version = "0-unstable-2026-08-03"; # plugin is versionless; date-stamped
   # Filter src to the plugin-relevant tree only (just lua/ here). `src = ../.`
   # would capture .devenv/.git/.jj — and .devenv's dangling GC symlinks trip
   # buildVimPlugin's noBrokenSymlinks check. Filtering is what the plan (§3.1)

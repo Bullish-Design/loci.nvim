@@ -48,9 +48,20 @@ local function client_for(bufnr)
   return vim.lsp.get_clients({ name = LSP_NAME, bufnr = bufnr or 0 })[1]
 end
 
--- The active vault root = the attached client's root_dir (used to resolve content/linked-file paths).
-local function root_dir()
-  local c = vim.lsp.get_clients({ name = LSP_NAME })[1]
+-- Resolve a flow pin to a client: a CLIENT OBJECT (passed as-is — survives buffer wipes and LSP attach
+-- churn, e.g. resession.load detaching every buffer) or a bufnr (re-resolved via the attachment table).
+local function resolve_client(ref)
+  if type(ref) == "table" then
+    return ref
+  end
+  return client_for(ref or 0)
+end
+
+-- The vault root used to resolve content/linked-file paths = the CURRENT buffer's client root. Anchored to
+-- the buffer on purpose: `vim.lsp.get_clients({ name })[1]` returns the FIRST-attached client, so with two
+-- vaults open in one session that resolution opened the WRONG vault's files (cross-vault contamination).
+local function root_dir(bufnr)
+  local c = client_for(bufnr or 0)
   return c and c.config.root_dir or nil
 end
 
@@ -58,19 +69,35 @@ local function open_path(p)
   vim.cmd.edit(vim.fn.fnameescape(p))
 end
 
--- Knowledge note abs path = <root>/.loci/content/<content_path>
-local function open_content(content_path)
-  local root = root_dir()
-  if root and content_path then
-    open_path(root .. "/.loci/content/" .. content_path)
+-- Defense-in-depth for server-supplied paths (the engine validates them, but never trust a join blindly):
+-- reject absolute paths, backslashes, and `..` traversal components.
+local function safe_join(root, rel)
+  if not root or not rel then
+    return nil
+  end
+  if rel:sub(1, 1) == "/" or rel:find("\\") or rel:match("(^|/)%.%./") then
+    return nil
+  end
+  return root .. "/" .. rel
+end
+
+-- Knowledge note abs path = <root>/.loci/content/<content_path>. `bufnr` pins the vault of the flow that
+-- produced `content_path` (a mid-flow buffer switch must not redirect the open to another vault).
+local function open_content(content_path, bufnr)
+  if not content_path then
+    return
+  end
+  local abs = safe_join(root_dir(bufnr or 0), ".loci/content/" .. content_path)
+  if abs then
+    open_path(abs)
   end
 end
 
 -- Linked file abs path = <root>/<path>
-local function open_linked(path)
-  local root = root_dir()
-  if root and path then
-    open_path(root .. "/" .. path)
+local function open_linked(path, bufnr)
+  local abs = safe_join(root_dir(bufnr or 0), path)
+  if abs then
+    open_path(abs)
   end
 end
 
@@ -138,7 +165,32 @@ local function attach(bufnr)
     )
     return
   end
-  vim.lsp.start({ name = LSP_NAME, cmd = { "loci-lsp" }, root_dir = root }, { bufnr = bufnr })
+  vim.lsp.start({
+    name = LSP_NAME,
+    cmd = { "loci-lsp" },
+    root_dir = root,
+    -- Server-death hygiene (F9): surface client errors, and on exit drop the (now unverifiable) tab marker
+    -- and point the user at the recovery (nvim already logs the raw "client quit" message). The callbacks
+    -- run in a fast-event context, so every UI touch goes through vim.schedule; the exit hint fires only on
+    -- abnormal exits (nvim's own condition), so quitting nvim normally isn't noisy.
+    on_error = function(code, err)
+      vim.schedule(function()
+        notify("lsp error (code " .. code .. "): " .. tostring(err or "unknown"), vim.log.levels.ERROR)
+      end)
+    end,
+    on_exit = function(code, signal)
+      vim.schedule(function()
+        vim.t.loci_workspace_id = nil
+        if code ~= 0 or (signal ~= 0 and signal ~= 15) then
+          notify(
+            "loci-lsp exited (code " .. code .. ", signal " .. signal .. ") — the vault client is disconnected; "
+              .. "reopen a vault file to reattach",
+            vim.log.levels.INFO
+          )
+        end
+      end)
+    end,
+  }, { bufnr = bufnr })
 end
 
 vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
@@ -163,8 +215,10 @@ vim.api.nvim_create_autocmd("LspAttach", {
 -- ── request primitives ──────────────────────────────────────────────────────
 
 -- Default-deny READ over `loci/op` -> the `{ ok, error }` envelope's `value` (or a surfaced error notify).
-function M.read(op, args, cb)
-  local client = client_for(0)
+-- `bufnr` pins the flow's vault (F3): a bufnr or a client OBJECT (see `resolve_client`), so reads stay on
+-- the flow's client even if the user switched buffers or a session load churned the LSP attachments.
+function M.read(op, args, cb, bufnr)
+  local client = resolve_client(bufnr)
   if not client then
     notify("open a file inside a loci vault", vim.log.levels.WARN)
     return
@@ -184,8 +238,9 @@ function M.read(op, args, cb)
 end
 
 -- EFFECT over `workspace/executeCommand` (single JSON-object argument) -> the `{ ok, error }` envelope.
-function M.command(name, args, cb)
-  local client = client_for(0)
+-- `bufnr` pins the flow's vault (F3): a bufnr or a client OBJECT (see `resolve_client`), same as `M.read`.
+function M.command(name, args, cb, bufnr)
+  local client = resolve_client(bufnr)
   if not client then
     notify("open a file inside a loci vault", vim.log.levels.WARN)
     return
@@ -210,12 +265,64 @@ function M.command(name, args, cb)
 end
 
 -- Run an effect, then reload the buffer (the engine is the sole writer). `:checktime` won't clobber unsaved.
-local function apply_and_reload(name, args)
+-- `bufnr` pins the effect + reload to the flow's source buffer (a plain `:checktime` reloads only the
+-- CURRENT buffer, which may have changed since the flow started). When the pin is a client OBJECT (no
+-- single target buffer, e.g. activation), reload the current buffer. If the target still has unsaved
+-- changes after the checktime, it refused to reload: warn NOW, because a later `:w` would silently
+-- overwrite the engine's just-written edit (F7).
+local function apply_and_reload(name, args, bufnr)
   M.command(name, args, function()
     vim.schedule(function()
-      vim.cmd("checktime")
+      local target = (type(bufnr) == "number" and bufnr ~= 0 and vim.api.nvim_buf_is_valid(bufnr))
+          and bufnr
+        or vim.api.nvim_get_current_buf()
+      if vim.api.nvim_buf_is_valid(target) then
+        local was_modified = vim.bo[target].modified
+        vim.cmd.checktime(tostring(target))
+        if was_modified and vim.bo[target].modified then
+          notify(
+            "the engine wrote " .. vim.fn.fnamemodify(vim.api.nvim_buf_get_name(target), ":t")
+              .. " but that buffer has unsaved changes — a later :w would overwrite the engine's edit "
+              .. "(save first, then :checktime or :e)",
+            vim.log.levels.WARN
+          )
+        end
+      end
     end)
-  end)
+  end, bufnr)
+end
+
+-- Deactivate the active workspace: run the effect (NO args — the op clears the Current pointer), then apply
+-- the engine's DeactivationPlan (F4): when the plan says so, save the outgoing workspace's resession session
+-- + wayfinder trail — but ONLY when the current tab/trail really IS that workspace's (never clobber a
+-- different context's data under the workspace's name). Clear the tab-local marker (F8) + reload.
+local function deactivate(bufnr)
+  M.command("loci.workspace.deactivate", {}, function(value)
+    vim.schedule(function()
+      local wid = present(value) and present(value.workspace_id) and value.workspace_id or nil
+      if wid then
+        if value.save_session == true then
+          pcall(function()
+            local resession = require("resession")
+            if resession.get_current() == "loci-" .. wid then
+              resession.save_tab("loci-" .. wid)
+            end
+          end)
+        end
+        if value.save_wayfinder == true then
+          pcall(function()
+            local wayfinder = require("wayfinder")
+            if wayfinder.trail_active_name() == "loci-" .. wid .. "-default" then
+              wayfinder.trail_save_named("loci-" .. wid .. "-default")
+            end
+          end)
+        end
+      end
+      vim.t.loci_workspace_id = nil
+      vim.cmd("checktime")
+      notify("workspace deactivated")
+    end)
+  end, bufnr)
 end
 
 -- Render a single projected field value (vim.NIL-safe): lists join, tables inspect compactly, `nil`/null -> —.
@@ -225,7 +332,14 @@ local function fmt_val(v)
   end
   if type(v) == "table" then
     if vim.islist(v) then
-      return #v == 0 and "[]" or table.concat(vim.tbl_map(tostring, v), ", ")
+      if #v == 0 then
+        return "[]"
+      end
+      local parts = {}
+      for _, x in ipairs(v) do
+        parts[#parts + 1] = type(x) == "table" and vim.inspect(x, { newline = " ", indent = "" }) or tostring(x)
+      end
+      return table.concat(parts, ", ")
     end
     return vim.inspect(v, { newline = " ", indent = "" })
   end
@@ -273,7 +387,7 @@ end
 
 -- Dry-run -> confirm -> apply (sole-writer-safe preview for contextual writes invoked outside a code action).
 -- The confirm prompt renders the engine's projected result so the user sees WHAT changes before applying.
-local function preview_then_apply(name, args, describe)
+local function preview_then_apply(name, args, describe, bufnr)
   local dry = vim.tbl_extend("force", args or {}, { dry_run = true })
   M.command(name, dry, function(value)
     vim.schedule(function()
@@ -282,11 +396,11 @@ local function preview_then_apply(name, args, describe)
       local prompt = (#lines > 0) and (header .. "\n" .. table.concat(lines, "\n")) or header
       vim.ui.select({ "Apply", "Cancel" }, { prompt = prompt }, function(choice)
         if choice == "Apply" then
-          apply_and_reload(name, args)
+          apply_and_reload(name, args, bufnr)
         end
       end)
     end)
-  end)
+  end, bufnr)
 end
 
 -- ── activation + editor_state applier ───────────────────────────────────────
@@ -312,7 +426,32 @@ local function apply_editor_state(es)
   local resession = es.resession
   if present(resession) and present(resession.session_name) then
     pcall(function()
-      require("resession").load(resession.session_name, { silence_errors = true })
+      local r = require("resession")
+      -- A GLOBAL-scoped session makes `load` wipe EVERY listed buffer (resession's designed reset behavior).
+      -- loci sessions are tab-scoped, but a mis-saved global session (e.g. <leader>qS on a loci tab) would
+      -- nuke the user's buffers on activation. Force reset=false so the session restores WITHOUT the wipe,
+      -- and warn once so the mis-save can be fixed (re-save tab-scoped). reset=false is a no-op for the
+      -- designed tab-scoped case (auto already resolves to false there).
+      local file
+      local ok, util = pcall(require, "resession.util")
+      if ok and util.get_session_file then
+        file = util.get_session_file(resession.session_name)
+      else
+        file = vim.fn.stdpath("data") .. "/session/" .. resession.session_name:gsub("/", "_") .. ".json"
+      end
+      local f = io.open(file, "r")
+      if f then
+        local s = f:read("*a")
+        f:close()
+        if s:match('"tab_scoped":%s*false') then
+          vim.notify_once(
+            "loci: session " .. resession.session_name .. " is global-scoped — loaded safely without reset; "
+              .. "re-save it tab-scoped from the workspace tab",
+            vim.log.levels.WARN
+          )
+        end
+      end
+      r.load(resession.session_name, { silence_errors = true, reset = false })
     end)
   end
 
@@ -328,8 +467,18 @@ end
 
 -- Activate a workspace: apply the engine's editor_state plan, mark the tab, then observe + persist the git
 -- branch/worktree the editor actually checked out (the engine omits `git` on activate — editor-observed).
-function M.activate(workspace_id)
+function M.activate(workspace_id, bufnr)
   if not workspace_id then
+    return
+  end
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  -- Pin the CLIENT OBJECT, not the bufnr: `apply_editor_state` below runs `resession.load`, which (a) wipes
+  -- every buffer for a global-scoped session and (b) detaches every buffer from its client even for a
+  -- tab-scoped one (attach churn under eventignore=all). The client object survives both, so the activate
+  -- and the git writeback still reach the right vault.
+  local client = client_for(bufnr)
+  if not client then
+    notify("open a file inside a loci vault", vim.log.levels.WARN)
     return
   end
   M.command("loci.workspace.activate", { workspace_id = workspace_id }, function(value)
@@ -339,17 +488,32 @@ function M.activate(workspace_id)
       end
       vim.t.loci_workspace_id = workspace_id
       vim.cmd("checktime")
-      local out = vim.fn.systemlist({ "git", "rev-parse", "--abbrev-ref", "HEAD" })
-      local branch = out and out[1]
-      if vim.v.shell_error == 0 and branch and branch ~= "" then
-        M.command("loci.workspace.set_editor_state", {
-          workspace_id = workspace_id,
-          git = { branch = branch, worktree_path = vim.fn.getcwd() },
-        })
+      -- Observe + persist the workspace's git state (the engine omits `git` on activate — editor-observed).
+      -- Resolve the worktree EXPLICITLY: the recorded worktree_path, else the vault root — NOT the current
+      -- tab dir, which on a first activation is just wherever nvim was launched (F6: that observed an
+      -- unrelated repo's branch or silently nothing). Non-blocking `vim.system` (the old `systemlist`
+      -- blocked the editor on slow worktrees) reads the worktree's ACTUAL checkout via `git -C`.
+      local git_dir = (present(value) and present(value.editor_state) and present(value.editor_state.git)
+          and present(value.editor_state.git.worktree_path))
+          and value.editor_state.git.worktree_path
+        or (client and client.config.root_dir)
+      if git_dir then
+        vim.system({ "git", "-C", git_dir, "rev-parse", "--abbrev-ref", "HEAD" }, { text = true }, function(obs)
+          local branch = obs.stdout and obs.stdout:gsub("%s+$", "")
+          if obs.code == 0 and branch and branch ~= "" then
+            -- vim.system's callback runs in a fast-event context; hop to the main loop before touching LSP.
+            vim.schedule(function()
+              M.command("loci.workspace.set_editor_state", {
+                workspace_id = workspace_id,
+                git = { branch = branch, worktree_path = git_dir },
+              }, nil, client)
+            end)
+          end
+        end)
       end
       notify("workspace activated")
     end)
-  end)
+  end, client)
 end
 
 -- ── client-command glue (vim.lsp.commands) ──────────────────────────────────
@@ -368,16 +532,19 @@ for _, name in ipairs({
   "loci.knowledge.remove",
   "loci.linked_files.unlink",
 }) do
-  vim.lsp.commands[name] = function(command)
+  vim.lsp.commands[name] = function(command, ctx)
     local a = (command.arguments and command.arguments[1]) or {}
-    apply_and_reload(command.command, a)
+    -- ctx.bufnr = the buffer the code action was executed against (nvim 0.12's `client:exec_cmd`); the
+    -- write + reload stay pinned to it even if the user switches buffers while the request is in flight.
+    apply_and_reload(command.command, a, ctx and ctx.bufnr or 0)
   end
 end
 
 -- (2) pick_tags: free-form comma-separated tag set (known values hinted) -> dry-run preview + note.update.
-vim.lsp.commands["loci.pick_tags"] = function(command)
+vim.lsp.commands["loci.pick_tags"] = function(command, ctx)
   local a = (command.arguments and command.arguments[1]) or {}
   local content_path = a.content_path
+  local bufnr = ctx and ctx.bufnr or 0
   M.read("field_values", { key = "tags" }, function(value)
     vim.schedule(function()
       local known = {}
@@ -392,16 +559,17 @@ vim.lsp.commands["loci.pick_tags"] = function(command)
         local tags = split_csv(input)
         preview_then_apply("loci.note.update", { content_path = content_path, tags = tags }, function()
           return "Set tags: " .. table.concat(tags, ", ")
-        end)
+        end, bufnr)
       end)
     end)
-  end)
+  end, bufnr)
 end
 
 -- (2) pick_project: choose a project -> dry-run preview + project.link.
-vim.lsp.commands["loci.pick_project"] = function(command)
+vim.lsp.commands["loci.pick_project"] = function(command, ctx)
   local a = (command.arguments and command.arguments[1]) or {}
   local content_path = a.content_path
+  local bufnr = ctx and ctx.bufnr or 0
   M.read("project.index", {}, function(rows)
     vim.schedule(function()
       local items = {}
@@ -418,18 +586,20 @@ vim.lsp.commands["loci.pick_project"] = function(command)
           { content_path = content_path, project_id = item.project_id },
           function()
             return "Link to project: " .. (item.title or item.project_id)
-          end
+          end,
+          bufnr
         )
       end)
     end)
-  end)
+  end, bufnr)
 end
 
 -- (2) pick_workspace: arg { op, args } — choose a workspace, apply `loci.<op>` with workspace_id merged in.
-vim.lsp.commands["loci.pick_workspace"] = function(command)
+vim.lsp.commands["loci.pick_workspace"] = function(command, ctx)
   local a = (command.arguments and command.arguments[1]) or {}
   local op = a.op
   local base = a.args or {}
+  local bufnr = ctx and ctx.bufnr or 0
   M.read("workspace.index", {}, function(rows)
     vim.schedule(function()
       local items = {}
@@ -441,16 +611,17 @@ vim.lsp.commands["loci.pick_workspace"] = function(command)
       end
       pick(items, "Select workspace", function(item)
         local args = vim.tbl_extend("force", base, { workspace_id = item.workspace_id })
-        apply_and_reload("loci." .. op, args)
+        apply_and_reload("loci." .. op, args, bufnr)
       end)
     end)
-  end)
+  end, bufnr)
 end
 
 -- (2) link_file: arg { path, workspace_id? } — pick a role (and a workspace if not baked) -> linked_files.link.
-vim.lsp.commands["loci.link_file"] = function(command)
+vim.lsp.commands["loci.link_file"] = function(command, ctx)
   local a = (command.arguments and command.arguments[1]) or {}
   local path = a.path
+  local bufnr = ctx and ctx.bufnr or 0
   local roles = { "implementation", "reference", "related", "documentation", "test" }
 
   local function with_workspace(workspace_id)
@@ -458,7 +629,7 @@ vim.lsp.commands["loci.link_file"] = function(command)
       if not role then
         return
       end
-      apply_and_reload("loci.linked_files.link", { path = path, workspace_id = workspace_id, role = role })
+      apply_and_reload("loci.linked_files.link", { path = path, workspace_id = workspace_id, role = role }, bufnr)
     end)
   end
 
@@ -480,7 +651,7 @@ vim.lsp.commands["loci.link_file"] = function(command)
           with_workspace(item.workspace_id)
         end)
       end)
-    end)
+    end, bufnr)
   end
 end
 
@@ -498,6 +669,9 @@ local function prompt_args(specs, done)
       return
     end
     i = i + 1
+    local function abort()
+      notify("command cancelled: '" .. (spec.name or "?") .. "' is required", vim.log.levels.INFO)
+    end
     local function continue(val)
       if val ~= nil then
         collected[spec.name] = val
@@ -509,15 +683,31 @@ local function prompt_args(specs, done)
       vim.ui.select({ "true", "false" }, { prompt = label .. ":" }, function(c)
         if c == nil then
           if spec.required then
-            return
+            abort()
+          else
+            continue(nil)
           end
-          return continue(nil)
+          return
         end
         continue(c == "true")
       end)
     elseif spec.kind == "vocab" then
-      vim.ui.select(spec.values or {}, { prompt = label .. ":" }, function(c)
-        if c == nil and spec.required then
+      if not spec.values or #spec.values == 0 then
+        -- the server offered no choices: abort if required, else omit (never open an empty picker)
+        if spec.required then
+          abort()
+        else
+          continue(nil)
+        end
+        return
+      end
+      vim.ui.select(spec.values, { prompt = label .. ":" }, function(c)
+        if c == nil then
+          if spec.required then
+            abort()
+          else
+            continue(nil)
+          end
           return
         end
         continue(c)
@@ -526,9 +716,11 @@ local function prompt_args(specs, done)
       vim.ui.input({ prompt = label .. " (comma-separated): " }, function(input)
         if input == nil then
           if spec.required then
-            return
+            abort()
+          else
+            continue(nil)
           end
-          return continue(nil)
+          return
         end
         continue(split_csv(input))
       end)
@@ -536,9 +728,11 @@ local function prompt_args(specs, done)
       vim.ui.input({ prompt = label .. ": " }, function(input)
         if input == nil or input == "" then
           if spec.required then
-            return
+            abort()
+          else
+            continue(nil)
           end
-          return continue(nil)
+          return
         end
         continue(input)
       end)
@@ -549,9 +743,11 @@ end
 
 -- Run a palette command with collected args. The activation flows apply editor_state; everything else just
 -- reloads the buffer after the write.
-local function run_palette(command, args)
+local function run_palette(command, args, bufnr)
   if command == "loci.workspace.activate" then
-    M.activate(args.workspace_id)
+    M.activate(args.workspace_id, bufnr)
+  elseif command == "loci.workspace.deactivate" then
+    deactivate(bufnr)
   elseif command == "loci.start-work" then
     M.command(command, args, function(value)
       vim.schedule(function()
@@ -561,15 +757,16 @@ local function run_palette(command, args)
         vim.cmd("checktime")
         notify("started work")
       end)
-    end)
+    end, bufnr)
   else
-    apply_and_reload(command, args)
+    apply_and_reload(command, args, bufnr)
   end
 end
 
 -- Command palette: snacks pick over `loci/commands`, prompt each arg by kind, fire the executeCommand.
 function M.palette()
-  local client = client_for(0)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local client = client_for(bufnr)
   if not client then
     notify("open a file inside a loci vault", vim.log.levels.WARN)
     return
@@ -586,7 +783,7 @@ function M.palette()
       end
       pick(items, "Loci palette", function(item)
         prompt_args(item.args, function(collected)
-          run_palette(item.command, collected)
+          run_palette(item.command, collected, bufnr)
         end)
       end)
     end)
@@ -596,17 +793,27 @@ end
 -- Pick a file under the vault and link it to the workspace via the existing `loci.link_file` glue (which
 -- asks the role, then applies `linked_files.link`). The glue + engine format-check the (repo-relative) path,
 -- so a best-effort relativize is enough — a bad path surfaces as a clean envelope error.
-local function link_file_flow(workspace_id)
-  local root = root_dir()
+local function link_file_flow(workspace_id, bufnr)
+  local root = root_dir(bufnr or 0)
+  if not root then
+    notify("open a file inside a loci vault", vim.log.levels.WARN)
+    return
+  end
+  local base = root:gsub("/+$", "") -- normalize so a trailing-slash root can't break the prefix compare
   local function do_link(rel)
     if not rel or rel == "" then
       return
     end
-    vim.lsp.commands["loci.link_file"]({ arguments = { { path = rel, workspace_id = workspace_id } } })
+    -- the engine format-checks too, but never even send an obviously-invalid path (absolute / traversal)
+    if rel:sub(1, 1) == "/" or rel:find("\\") or rel:match("(^|/)%.%./") then
+      notify("link path must be vault-relative", vim.log.levels.WARN)
+      return
+    end
+    vim.lsp.commands["loci.link_file"]({ arguments = { { path = rel, workspace_id = workspace_id } } }, { bufnr = bufnr })
   end
   local function relativize(p)
-    if root and p and p:sub(1, #root + 1) == (root .. "/") then
-      return p:sub(#root + 2)
+    if p and p:sub(1, #base + 1) == (base .. "/") then
+      return p:sub(#base + 2)
     end
     return p
   end
@@ -632,6 +839,7 @@ end
 -- (open / unlink), plus link-a-file, reconcile, and deactivate verbs. Every row either opens a file or runs a
 -- single verb (house style: flat rows + closures, no nested menus).
 function M.status()
+  local bufnr = vim.api.nvim_get_current_buf()
   M.read("workspace.current", {}, function(cur)
     if not (cur and cur.found == true) then
       vim.schedule(function()
@@ -660,7 +868,7 @@ function M.status()
               rows[#rows + 1] = {
                 text = string.format("  ◆ project: %s (%s)%s", project.title or "?", project.status or "?", count),
                 action = function()
-                  open_content(cp)
+                  open_content(cp, bufnr)
                 end,
               }
             end
@@ -670,7 +878,7 @@ function M.status()
               rows[#rows + 1] = {
                 text = "  note  " .. (o.title_cache or cp),
                 action = function()
-                  open_content(cp)
+                  open_content(cp, bufnr)
                 end,
               }
             end
@@ -679,32 +887,32 @@ function M.status()
               rows[#rows + 1] = {
                 text = "  file  " .. p .. " (" .. (lf.role or "") .. ")",
                 action = function()
-                  open_linked(p)
+                  open_linked(p, bufnr)
                 end,
               }
               rows[#rows + 1] = {
                 text = "    ▸ unlink " .. p,
                 action = function()
-                  apply_and_reload("loci.linked_files.unlink", { workspace_id = wid, path = p })
+                  apply_and_reload("loci.linked_files.unlink", { workspace_id = wid, path = p }, bufnr)
                 end,
               }
             end
             rows[#rows + 1] = {
               text = "  ▸ link a file to this workspace…",
               action = function()
-                link_file_flow(wid)
+                link_file_flow(wid, bufnr)
               end,
             }
             rows[#rows + 1] = {
               text = "  ▸ reconcile workspace",
               action = function()
-                apply_and_reload("loci.reconcile", {})
+                apply_and_reload("loci.reconcile", {}, bufnr)
               end,
             }
             rows[#rows + 1] = {
               text = "  ▸ deactivate workspace",
               action = function()
-                apply_and_reload("loci.workspace.deactivate", { workspace_id = wid })
+                deactivate(bufnr)
               end,
             }
             pick(rows, "Loci status", function(item)
@@ -719,18 +927,19 @@ function M.status()
           M.read("project.get", { project_id = cur.project_id }, function(proj)
             M.read("project.members", { project_id = cur.project_id }, function(mem)
               show(proj, mem and mem.members and #mem.members or nil)
-            end)
-          end)
+            end, bufnr)
+          end, bufnr)
         else
           show(nil, nil)
         end
-      end)
-    end)
-  end)
+      end, bufnr)
+    end, bufnr)
+  end, bufnr)
 end
 
 -- Workspace switcher: pick from `workspace.index` -> activate (closes GAP-2).
 function M.workspaces()
+  local bufnr = vim.api.nvim_get_current_buf()
   M.read("workspace.index", {}, function(rows)
     vim.schedule(function()
       local items = {}
@@ -741,14 +950,15 @@ function M.workspaces()
         }
       end
       pick(items, "Switch workspace", function(item)
-        M.activate(item.workspace_id)
+        M.activate(item.workspace_id, bufnr)
       end)
     end)
-  end)
+  end, bufnr)
 end
 
 -- Project picker: pick from `project.index` -> open the project note (closes GAP-1).
 function M.projects()
+  local bufnr = vim.api.nvim_get_current_buf()
   M.read("project.index", {}, function(rows)
     vim.schedule(function()
       local items = {}
@@ -759,10 +969,10 @@ function M.projects()
         }
       end
       pick(items, "Projects", function(item)
-        open_content(item.content_path)
+        open_content(item.content_path, bufnr)
       end)
     end)
-  end)
+  end, bufnr)
 end
 
 -- Doctor hub: the whole-vault `doctor` report. Each row is a finding (confirm opens its file); a top row
@@ -770,6 +980,7 @@ end
 -- a per-code chooser waits on more engine fixers). The report is `{ issues, ok, stats }`; findings live under
 -- `value.issues`, the fixable count under `value.stats.by_code.missing_loci_id`.
 function M.doctor()
+  local bufnr = vim.api.nvim_get_current_buf()
   M.read("doctor", {}, function(report)
     vim.schedule(function()
       local issues = (report and report.issues) or {}
@@ -784,7 +995,7 @@ function M.doctor()
         rows[#rows + 1] = {
           text = string.format("▸ Fix all missing loci_id (%d)", fixable),
           action = function()
-            apply_and_reload("loci.doctor_fix", {})
+            apply_and_reload("loci.doctor_fix", {}, bufnr)
           end,
         }
       end
@@ -793,7 +1004,7 @@ function M.doctor()
         rows[#rows + 1] = {
           text = string.format("[%s] %s — %s", f.code, path, f.message),
           action = present(f.path) and function()
-            open_content(f.path)
+            open_content(f.path, bufnr)
           end or nil,
         }
       end
@@ -803,7 +1014,7 @@ function M.doctor()
         end
       end)
     end)
-  end)
+  end, bufnr)
 end
 
 -- ── note quick-commands ──────────────────────────────────────────────────────
@@ -811,32 +1022,35 @@ end
 -- The three note effects (already in the palette) given direct verbs. Each returns the new note record whose
 -- `content_path` we open under <root>/.loci/content/ (confirmed live: the field is `content_path`).
 
-local function open_new_note(value)
+local function open_new_note(value, bufnr)
   if value and present(value.content_path) then
-    open_content(value.content_path)
+    open_content(value.content_path, bufnr)
   end
 end
 
 function M.daily()
+  local bufnr = vim.api.nvim_get_current_buf()
   M.command("loci.note.daily", {}, function(value)
     vim.schedule(function()
-      open_new_note(value)
+      open_new_note(value, bufnr)
     end)
-  end)
+  end, bufnr)
 end
 
 function M.scratch()
+  local bufnr = vim.api.nvim_get_current_buf()
   M.command("loci.note.scratch", {}, function(value)
     vim.schedule(function()
-      open_new_note(value)
+      open_new_note(value, bufnr)
     end)
-  end)
+  end, bufnr)
 end
 
 -- New note: reuse the palette's per-kind arg-prompt flow over `note.create`'s LIVE spec (from `loci/commands`),
 -- then create + open — so the prompted args track whatever the engine declares, no hardcoding here.
 function M.new_note()
-  local client = client_for(0)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local client = client_for(bufnr)
   if not client then
     notify("open a file inside a loci vault", vim.log.levels.WARN)
     return
@@ -861,9 +1075,9 @@ function M.new_note()
       prompt_args(spec.args or {}, function(collected)
         M.command("loci.note.create", collected, function(value)
           vim.schedule(function()
-            open_new_note(value)
+            open_new_note(value, bufnr)
           end)
-        end)
+        end, bufnr)
       end)
     end)
   end, 0)
