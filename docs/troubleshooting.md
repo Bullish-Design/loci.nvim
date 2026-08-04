@@ -61,6 +61,7 @@ such sessions safely — `apply_editor_state` forces `reset=false`, so a mis-sav
 without wiping your buffers, and you get a one-time warning ("…is global-scoped — loaded safely without
 reset… re-save it tab-scoped from the workspace tab").
 
-If you see that warning: from the workspace tab, re-save tab-scoped (`resession.save_tab("loci-<id>")`, or
-use the workspace-aware save binding once the fleet keymap is updated). The fleet keymap itself is owned in
-nix-nvim (out of scope here).
+If you see that warning: from the workspace tab, re-save tab-scoped
+(`resession.save_tab("loci-<id>")`). The fleet `<leader>qS` binding was fixed to do exactly that on a loci
+tab (nix-nvim 9fd5049) — the warning should not appear from the designed path anymore; if it does, a
+session was still saved global-scoped some other way.

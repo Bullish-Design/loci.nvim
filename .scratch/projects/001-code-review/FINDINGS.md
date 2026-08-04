@@ -348,23 +348,28 @@ requires a hostile server; they are ordinary two-vault or first-activation flows
 
 ## Could-not-verify list
 
-- **tiny-code-action@0d040ed dispatch path** (no network on this box). nvim 0.12.3's deprecated
-  `vim.lsp.buf.execute_command` bypasses `vim.lsp.commands` entirely (verified in the runtime source); the
-  client's write-command interception *and* all four client-only code-action commands
-  (`loci.pick_tags/pick_project/pick_workspace/link_file`) only work if the executor calls
-  `client:exec_cmd` (or a `vim.lsp.commands`-respecting API). If tiny-code-action uses the deprecated path,
-  the picker code actions fail with method-not-found and code-action writes never `:checktime`. The docs'
-  claim that these flows work implies the modern path, but the pinned rev couldn't be inspected.
-- **Snacks picker API drift** (`Snacks.picker.pick`/`files`, `layout.hidden`, `confirm` signature) — the
-  pcall fallback to `vim.ui.select` is a reasonable shield, but the exact picker call shape against the
-  fleet's snacks version was not run.
-- **End-to-end nvim + loci-lsp smoke test** (no nvim on PATH here; used the store binary for semantics and
-  drove the server over raw JSON-RPC instead — all contract claims were exercised at the protocol level).
-- **Pinned rev drift** — the local loci-core checkout (`5cdf2ca`, has stage-3 commits) is ahead of the
-  flake-pinned rev `57c83f4`; contract claims were verified against the local tree. The core surfaces
-  checked (envelope, palette, deactivate request model, activation plan) are architecturally stable.
-- **haunt/resession/wayfinder runtime behavior** inside a real activation (APIs verified by the author in
-  commit 262bbc2; not re-run here).
+All five items below were RESOLVED during the follow-up passes (2026-08-04); they are kept for the record.
+
+- **tiny-code-action@0d040ed dispatch path — VERIFIED (fleet = rachartier/tiny-code-action.nvim@0d040ed,
+  wired as `tiny-code-action` with `backend="vim", picker="snacks"`).** `action.lua` calls
+  `client:_exec_cmd(command, ctx)` / `client:exec_cmd(command, ctx)` — nvim 0.12.3's `exec_cmd` resolves
+  `vim.lsp.commands` FIRST, so the client's write-command interception (apply-then-reload + `:checktime`)
+  and all four client-only code-action commands DO dispatch. `ctx.bufnr` is set by `exec_cmd`
+  (`_resolve_bufnr(nil)` → current buffer) and the picker restores the original buffer's window before
+  exec, so the pin is the invocation buffer. Banked empirically as harness test `t19`.
+- **Snacks picker API drift — VERIFIED against the fleet's snacks v2.31.0.** `Snacks.picker.pick(opts)`
+  single-table overload with `items` (v2.31.0 `M.pick(source, opts)` + `@overload fun(opts)`), `format`
+  returning `{ {text, hl} }`, `confirm(picker, item)`, and `layout.hidden` (a documented
+  `("input"|"preview"|"list")[]` field) all match; `Snacks.picker.files({ cwd, confirm })` resolves to
+  `pick("files", opts)` over the files source config. The `vim.ui.select` pcall fallback stays as shield.
+- **End-to-end nvim + loci-lsp smoke test — DONE (harness `t17` real attach/exit, `t20` real full-stack:
+  `repository.init` → `M.daily()` against the real engine writes + opens the created note).**
+- **Pinned rev drift — RESOLVED.** loci.nvim's pin now tracks loci-core `d967126` (knappy wired); see the
+  follow-up note below.
+- **haunt/resession/wayfinder runtime behavior inside a real activation — DONE (harness `t21`): real
+  vendored haunt v1.2.0 `change_data_dir` is invoked with the plan's dir and succeeds; real resession
+  v1.2.0 load runs; wayfinder stays stubbed to its called surface (its trail backend needs the interactive
+  stack — see tests/README.md).**
 
 ---
 
@@ -372,8 +377,9 @@ requires a hostile server; they are ordinary two-vault or first-activation flows
 
 ### Fleet `<leader>qS` guard
 
-**Scope note:** nix-nvim is READ-ONLY from here, so the fleet keymap cannot be
-fixed in this repo — this section records the hazard + the client-side mitigation.
+**Scope note:** nix-nvim was treated as READ-ONLY in the original task, but the follow-up pass was
+authorized to fix it — the fleet keymap is now patched (see below); this section records the hazard + both
+mitigations.
 
 - `resession.save()` (the fleet `<leader>qS`) saves the current tab's buffers as a
   **GLOBAL-scoped** session. Run on a loci tab, it overwrites the workspace's
@@ -385,9 +391,11 @@ fixed in this repo — this section records the hazard + the client-side mitigat
   turns the mis-saved global session into a safe restore (a no-op for the designed
   tab-scoped case), and the client warns once when the session file is
   global-scoped ("re-save it tab-scoped from the workspace tab").
-- **Fleet-side fix (nix-nvim, NOT done here):** bind the workspace save to
-  `resession.save_tab("loci-<id>", ...)` (tab-scoped) instead of the global
-  `resession.save()` — or drop `<leader>qS` on loci tabs entirely.
+- **Fleet-side fix — DONE (nix-nvim 9fd5049).** The fleet `<leader>qS` binding
+  now checks `vim.t.loci_workspace_id` and saves
+  `resession.save_tab("loci-<id>")` (tab-scoped) on a loci tab instead of the
+  global `resession.save()`; other tabs keep the previous behavior. The
+  client-side mitigation remains as defense-in-depth.
 - See also `docs/troubleshooting.md` ("Fleet `<leader>qS` on a loci tab").
 
 ### loci-core pin drift — RESOLVED (2026-08-04)
