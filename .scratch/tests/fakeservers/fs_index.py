@@ -9,6 +9,16 @@ workspace. Everything else -> `{ok: true, value: {}}`. Used by the root-anchorin
 import json
 import sys
 
+# optional LOG: when given, every loci/op read and workspace/executeCommand is
+# logged (command/op name + args) so tests can assert what reached the server.
+LOG = sys.argv[1] if len(sys.argv) > 1 else None
+
+
+def log(line):
+    if LOG:
+        with open(LOG, "a") as f:
+            f.write(line + "\n")
+
 
 def read_msg():
     headers = b""
@@ -48,8 +58,10 @@ while True:
         # abnormal server death for the F9 test: exit nonzero mid-request
         if params.get("command") == "loci.test.crash":
             sys.exit(3)
+        log("cmd " + json.dumps(params))
         write_msg({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "value": {}}})
     elif m == "loci/op":
+        log("op " + params.get("op", "?") + " " + json.dumps(params.get("args") or {}))
         op = params.get("op")
         if op == "project.index":
             value = [

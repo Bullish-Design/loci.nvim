@@ -142,6 +142,9 @@ tests=(
   "t17_f9_real_server"
   "t18_f6_git|first|CASE=first"
   "t18_f6_git|recorded|CASE=recorded"
+  "t19_code_action_dispatch"
+  "t20_real_fullstack"
+  "t21_real_plugins_activation"
 )
 
 PASS=0

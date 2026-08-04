@@ -29,13 +29,14 @@ Requires on PATH: `nvim` (0.12.x — override with `NVIM=/path/to/nvim`), `pytho
   `vim.notify`, and provides `expect`/`finish`.
 - A test **passes iff its output contains `RESULT: PASS`**; a crash, hang (180s
   timeout), or failed assertion fails the run and the runner exits non-zero.
-- Session tests use the **real resession.nvim v1.2.0**, vendored under
-  `vendor/resession.nvim` (rtp entry). `wayfinder` is **stubbed** to the two API
-  functions the client calls (`trail_active_name`, `trail_save_named`) — the real
-  plugin's trail backend needs its interactive layout/picker stack and does not
-  track an active trail headless (verified); the client's calls are pcall-guarded,
-  so the stub exercises exactly the surface the client uses. The review harness
-  stubbed it the same way.
+- Session tests use the **real resession.nvim v1.2.0** and **real haunt.nvim
+  v1.2.0**, vendored under `vendor/` (rtp entries). `wayfinder` is **stubbed** to
+  the two API functions the client calls (`trail_active_name`, `trail_save_named`
+  in deactivate; `trail_load_named` in activation) — the real plugin's trail
+  backend needs its interactive layout/picker stack and does not track an active
+  trail headless (verified); the client's calls are pcall-guarded, so the stub
+  exercises exactly the surface the client uses. The review harness stubbed it
+  the same way.
 
 ## Fakeservers (`fakeservers/`)
 
@@ -76,3 +77,6 @@ handlers (which only `attach()` registers) are what the assertions exercise.
 | `t16_f9_server_death` | F9 through real `attach()`: graceful silent; abnormal exit → hint + marker clear |
 | `t17_f9_real_server` | F9 end-to-end with the real `loci-lsp` (~4s init) |
 | `t18_f6_git` | F6: first activation records the vault root's branch; recorded worktree wins |
+| `t19_code_action_dispatch` | `client:exec_cmd` → `vim.lsp.commands` interception + `ctx.bufnr` (the fleet's tiny-code-action path) |
+| `t20_real_fullstack` | REAL engine: `repository.init` → `M.daily()` → created note written + opened |
+| `t21_real_plugins_activation` | REAL haunt `change_data_dir` + resession load + wayfinder trail in one activation |
