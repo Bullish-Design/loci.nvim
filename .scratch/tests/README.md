@@ -8,7 +8,7 @@ Python JSON-RPC fakeserver or the real `loci-lsp`, with real fixture git vaults.
 ## Run
 
 ```bash
-.scratch/tests/run-tests.sh          # the full suite (≈80s, includes ~8s of real-server init)
+.scratch/tests/run-tests.sh          # the full suite (≈2 min; t17/t20/t21 wait out the real server's ~4s init)
 .scratch/tests/run-tests.sh t05      # filter: run tests whose name matches
 .scratch/tests/run-tests.sh f5       # the Task-1 F5 tests
 ```
