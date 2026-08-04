@@ -65,18 +65,24 @@
 >   initializing" (`vim.lsp.get_clients({ name, _uninitialized = true })`, filtered to genuinely
 >   uninitialized clients) and notify "server still starting (~4s on first launch)" instead of "open a file
 >   inside a loci vault". Covered headless (`t03`).
-> - **(3b) Fleet `<leader>qS` guard — DOCUMENTED (nix-nvim is out of scope, read-only).** On a loci tab,
->   `resession.save()` (GLOBAL) overwrites the workspace session as a global-scoped one; the client now
->   loads such sessions safely (`reset=false`) and warns once. See
->   [the note below](#fleet-leaderqsg-guard) and `docs/troubleshooting.md`.
-> - **(3c) loci-core pin drift — DOCUMENTED, lock left alone.** The flake pins `57c83f4`; the local checkout
->   is ahead (`5cdf2ca`). `5cdf2ca` IS pushed and git+ssh-reachable, so the pin was tried — but the
->   re-exported `loci-lsp-tests` check FAILS at that rev (`ModuleNotFoundError: knappy.wikilinks`), so
->   bumping would break `nix flake check`. Lock reverted to `57c83f4`; bump deferred until loci-core's flake
->   wires the knappy input. Contract surfaces the client depends on (envelope, palette, deactivate request
->   model, activation plan) were verified against the local tree and are architecturally stable.
-> - **(3d) `nix flake check` — GREEN** on the final committed state (client fixes + reverted pin; version
->   stamp already `0-unstable-2026-08-03`).
+> - **(3b) Fleet `<leader>qS` guard — FIXED in nix-nvim** (`fix(sessions): <leader>qS saves tab-scoped on a
+>   loci tab`, 9fd5049). The generic `resession.save()` writes the GLOBAL flavor; on a loci tab it overwrote
+>   the workspace's `loci-<id>.json` as global-scoped. The fleet keymap now checks `vim.t.loci_workspace_id`
+>   and saves `resession.save_tab("loci-<id>")` on a loci tab (else the previous behavior). Verified headless
+>   with real resession v1.2.0: loci tab → tab-scoped `loci-<id>`; the generic global save writes a separate
+>   file and never touches the loci session. The client-side `reset=false` + warning mitigation remains as
+>   defense-in-depth. See [the note below](#fleet-leaderqsg-guard) and `docs/troubleshooting.md`.
+> - **(3c) loci-core pin drift — RESOLVED.** The bump was blocked because loci-core at `5cdf2ca` did not wire
+>   `knappy.wikilinks` into its flake test env (`ModuleNotFoundError` in the re-exported gate). Fixed
+>   upstream (loci-core `d967126`: knappy input bumped to the wikilink surface + its pyyaml dep), pin bumped
+>   to `d967126`, `nix flake check` green — the client is now gated against the exact engine it was verified
+>   against.
+> - **(3d) `nix flake check` — GREEN**, now with THREE gates: the re-exported loci-core pytest suite, the new
+>   headless CLIENT regression suite (`loci-nvim-tests` check running `.scratch/tests/run-tests.sh` with the
+>   flake's own nvim 0.12.3 + the pinned `loci-lsp`, all 20 checks), and the package builds. The harness was
+>   hardened along the way: per-test orphan cleanup, and the `loci-lsp` shim now uses a RESOLVED bash
+>   shebang (the nix sandbox has no `/usr/bin/env` — glibc execvp silently fell through to the real server,
+>   which is how the sandbox-only t16 failure was found).
 
 **Reviewer scope:** `lua/loci/init.lua` (883 lines), `flake.nix`, `nix/loci-nvim.nix`, `docs/*`, plus the
 engine at `loci-core` (`lsp/loci_lsp/*.py`, `src/loci_core/{control,domain,ops,requests}.py`) for wire-contract
@@ -384,14 +390,12 @@ fixed in this repo — this section records the hazard + the client-side mitigat
   `resession.save()` — or drop `<leader>qS` on loci tabs entirely.
 - See also `docs/troubleshooting.md` ("Fleet `<leader>qS` on a loci tab").
 
-### loci-core pin drift
+### loci-core pin drift — RESOLVED (2026-08-04)
 
-The flake pins `57c83f4`; the local engine checkout is ahead at `5cdf2ca`
-(stage-3). `5cdf2ca` is pushed and git+ssh-reachable — the pin was tried — but the
-re-exported `loci-lsp-tests` check fails at that rev (`ModuleNotFoundError: No
-module named 'knappy.wikilinks'`, the stage-3 wikilink diagnostic depends on a
-knappy surface the loci-core flake at that rev doesn't wire). The lock was
-reverted; bump once loci-core's flake resolves the knappy input. The surfaces the
-client is written against (envelope, palette spec, `workspace.deactivate` request
-model, activation plan / `primary_content_path`) are unchanged across the drift
-and were verified live against the local tree.
+The flake pinned `57c83f4`; the local engine was ahead at `5cdf2ca` (stage-3). The bump was blocked by the
+re-exported `loci-lsp-tests` check failing at that rev — `ModuleNotFoundError: knappy.wikilinks` — because
+loci-core's flake pinned knappy at a rev predating the wikilink surface. Fixed upstream (loci-core
+`d967126`): the knappy input now points at the wikilink-bearing rev and the knappy package declares its
+1.1.x runtime dep pyyaml. loci.nvim's pin now tracks `d967126` and `nix flake check` is green — the client is
+gated against the exact engine its contracts were verified against (envelope, palette spec,
+`workspace.deactivate` request model, activation plan / `primary_content_path`).
