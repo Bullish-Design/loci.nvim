@@ -49,8 +49,38 @@
 
       # CI gate as a flake check: the loci-lsp pytest + pytest-lsp suite, re-exported
       # from loci-core's flake (the engine + pygls + pytest-lsp closure lives there).
-      checks = forAllSystems (system: {
-        loci-lsp-tests = loci-core.checks.${system}.loci-lsp-tests;
-      });
+      checks = forAllSystems (system:
+        let pkgs = pkgsFor system; in {
+          loci-lsp-tests = loci-core.checks.${system}.loci-lsp-tests;
+
+          # The headless CLIENT regression suite (.scratch/tests/run-tests.sh): Python
+          # JSON-RPC fakeservers + fixture git vaults + vendored resession, one check
+          # per scenario. Hermetic: fresh sandbox per test, no network, no stray
+          # marker dirs. t17 exercises the REAL loci-lsp — this flake's own re-export
+          # of the pinned loci-core — so the check gates the client against the exact
+          # engine the fleet runs. Needs nvim >= 0.12 (the flake's nixpkgs provides
+          # 0.12.x).
+          loci-nvim-tests = pkgs.stdenvNoCC.mkDerivation {
+            name = "loci-nvim-tests";
+            src = nixpkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = nixpkgs.lib.fileset.unions [
+                ./lua
+                ./.scratch/tests
+              ];
+            };
+            dontBuild = true;
+            doCheck = true;
+            nativeBuildInputs = [ pkgs.git pkgs.python3 pkgs.neovim ];
+            checkPhase = ''
+              export HOME="$PWD/home" && mkdir -p "$HOME"
+              export NVIM="$(command -v nvim)"
+              export LOCI_PLUGROOT="$PWD"
+              export PATH="${self.packages.${system}.loci-lsp}/bin:$PATH"
+              bash .scratch/tests/run-tests.sh
+            '';
+            installPhase = "mkdir -p $out && echo ok > $out/result";
+          };
+        });
     };
 }
