@@ -10,8 +10,8 @@
   repoman.enable = true;
   repoman.managers = [ "copy" "git" ];
 
-  # A Python venv hosts the manager CLIs (copyroom, gitman) that repoman-sync
-  # installs from repoman.lock — required even though this project isn't Python.
+  # Python venv for uv-managed deps. The manager CLIs (copyroom, gitman) come from
+  # the SYSTEM-WIDE toolchain venv (`repoman-sync --machine`), not this repo's venv.
   languages.python = {
     enable = true;
     venv.enable = true;
