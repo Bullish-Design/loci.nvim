@@ -15,7 +15,10 @@ The fastest path is the CLI one-shot, which creates a note, a workspace, and act
 loci start-work "Spike the parser"
 ```
 
-Inside the editor, create one via the palette (`<leader>lp` → `workspace.create`).
+Inside the editor, the palette (`<leader>lp`) offers both `workspace.create` and `start-work`. The palette's
+`start-work` — like the CLI — creates the note + workspace, activates, and **opens the new note**; the
+note-creating verbs (`note.create`/`note.daily`/`note.scratch`) likewise open the note they create, exactly
+like the direct `:LociNote`/`:LociDaily`/`:LociScratch` commands.
 
 ## Switch (activate)
 
@@ -48,7 +51,10 @@ The old "refresh" pipeline is now the engine's **reconcile** pass (rebuild/repai
 
 ## Deactivate / archive
 
-- Deactivate the current workspace: status hub → `▸ deactivate workspace`.
+- Deactivate the current workspace: status hub → `▸ deactivate workspace`. Deactivation follows the engine's
+  plan: when the plan says so (and the current tab/trail really is the workspace's), it saves the outgoing
+  workspace's resession tab session + wayfinder trail, then clears the tab marker and reloads — a wrong
+  tab/trail is never clobbered.
 - Archive a workspace: palette (`<leader>lp` → `workspace.archive`). Archiving marks it archived; it does not
   delete markdown or integration data.
 

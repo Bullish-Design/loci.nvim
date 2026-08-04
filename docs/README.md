@@ -74,14 +74,22 @@ presentational and intentionally skipped (the editor owns the live tab).
 
 ### 1. Prerequisites
 
-- [`uv`](https://docs.astral.sh/uv/) on PATH.
-- A local checkout of **loci-core** (on this machine: `~/Documents/Projects/loci-core`).
-- `~/.local/bin` on your PATH (where `uv tool` installs binaries).
+- **The Nix fleet (recommended):** nix-nvim consumes this repo's flake — the plugin lands on the
+  runtimepath and `loci-lsp` on PATH automatically. Nothing to install manually.
+- **Manual / engine dev:** a local checkout of **loci-core** (on this machine: `~/Documents/Projects/loci-core`)
+  and `uv` on PATH.
 
 ### 2. Install the two tools
 
-Loci is **not** a `vim.pack` plugin and **not** a Nix dependency — it's two `uv` tools installed from the
-loci-core source tree:
+The repo's flake exports both binaries, so the fleet gets them via nix-nvim (this is the primary path):
+
+```bash
+nix build .#loci-nvim    # the plugin derivation
+nix build .#loci-lsp     # the server binary (re-exported from loci-core's flake)
+```
+
+For a manual install outside the flake, install the two `uv` tools from the loci-core source tree (this is
+the development path — e.g. when hacking on the engine):
 
 ```bash
 # the CLI (provides `loci`) — used to create vaults and start work
@@ -166,11 +174,12 @@ file, set status, archive) is reached through the palette, the status hub, or a 
 
 | Symptom | Cause / fix |
 |---|---|
-| Loci does nothing; no client attaches | `loci-lsp` not on PATH. `which loci-lsp` outside devenv; reinstall the uv tool. |
+| Loci does nothing; no client attaches | `loci-lsp` not on PATH. `which loci-lsp` outside devenv; reinstall (flake: `nix build .#loci-lsp`; manual: `uv tool install …`). |
 | "open a file inside a loci vault" | The current buffer isn't under a `.loci/` directory. Reads/effects need a vault buffer. |
+| "server still starting (~4s on first launch)" | A `:Loci*` command ran while the vault's server was still initializing. Wait a moment and retry. |
 | Two completion menus | Should never happen — the client deliberately does **not** call `vim.lsp.completion.enable` (blink carries it). |
 | Code action applied but buffer looks stale | The engine wrote the file; the client runs `:checktime`. An unsaved buffer won't be clobbered — save or reload. |
-| Server behaves like an old version | You changed the engine. Refresh with `uv tool install --force …` (above). |
+| Server behaves like an old version | You changed the engine. Refresh (`uv tool install --force …` for the manual install; for the flake, bump the loci-core pin / nix-nvim input). |
 
 More: [troubleshooting.md](troubleshooting.md).
 

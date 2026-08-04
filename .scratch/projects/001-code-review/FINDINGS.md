@@ -59,7 +59,7 @@
 > - **Regression harness — banked.** The ephemeral `/tmp/loci-review` harness was ported to
 >   `.scratch/tests/` (`run-tests.sh` + fakeservers + fixture vaults; resession.nvim v1.2.0 vendored; real
 >   `loci-lsp` used by one end-to-end F9 test). Hermetic: fresh sandbox per test (no stray `.loci` marker
->   dirs / sessions between tests), 20 checks green covering F1/F2/F3/F4/F6/F7/F8/F9/F12, the session
+>   dirs / sessions between tests), 23 checks green covering F1/F2/F3/F4/F6/F7/F8/F9/F12, the session
 >   landmine, single-vault + no-client regressions, and the F5 tests. Runner exits non-zero on any failure.
 > - **(3a) Attach-latency UX — FIXED.** `M.read`/`M.command` distinguish "no client" from "client still
 >   initializing" (`vim.lsp.get_clients({ name, _uninitialized = true })`, filtered to genuinely
@@ -79,10 +79,25 @@
 >   against.
 > - **(3d) `nix flake check` — GREEN**, now with THREE gates: the re-exported loci-core pytest suite, the new
 >   headless CLIENT regression suite (`loci-nvim-tests` check running `.scratch/tests/run-tests.sh` with the
->   flake's own nvim 0.12.3 + the pinned `loci-lsp`, all 20 checks), and the package builds. The harness was
+>   flake's own nvim 0.12.3 + the pinned `loci-lsp`, all 23 checks), and the package builds. The harness was
 >   hardened along the way: per-test orphan cleanup, and the `loci-lsp` shim now uses a RESOLVED bash
 >   shebang (the nix sandbox has no `/usr/bin/env` — glibc execvp silently fell through to the real server,
 >   which is how the sandbox-only t16 failure was found).
+>
+> **Verification pass (2026-08-04):** shipped the fix set to the fleet and retired the review's
+> could-not-verify list:
+> - **Fleet delivery — DONE.** loci.nvim tagged `v0.1.3`; nix-nvim now pins it (loci-nvim `c7ab445`,
+>   transitive loci-core `d967126` + knappy `7287f48`). The fleet runs every fix.
+> - **tiny-code-action dispatch — VERIFIED** (fleet = `rachartier/tiny-code-action.nvim@0d040ed`,
+>   `backend="vim", picker="snacks"`): it calls `client:_exec_cmd`/`exec_cmd`, which nvim 0.12.3 resolves
+>   through `vim.lsp.commands` FIRST — so the client's write-command interception and the four client-only
+>   picker commands DO dispatch, with `ctx.bufnr` pinned to the invocation buffer. Banked as `t19`.
+> - **Snacks picker API — VERIFIED against the fleet's snacks v2.31.0**: `pick(opts)` single-table overload,
+>   `format` → `{ {text,hl} }`, `confirm(picker,item)`, `layout.hidden`, and `files({cwd, confirm})` all
+>   match the client's calls.
+> - **End-to-end + real-plugin activation — CLOSED** (`t20` real full-stack: `repository.init` → `M.daily`
+>   against the real engine writes + opens the note; `t21` real vendored haunt `change_data_dir` + resession
+>   load in one activation). Suite is now 23 checks, green locally and inside the `nix flake check` sandbox.
 
 **Reviewer scope:** `lua/loci/init.lua` (883 lines), `flake.nix`, `nix/loci-nvim.nix`, `docs/*`, plus the
 engine at `loci-core` (`lsp/loci_lsp/*.py`, `src/loci_core/{control,domain,ops,requests}.py`) for wire-contract

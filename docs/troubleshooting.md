@@ -30,6 +30,13 @@ Then in the editor, on a file under the vault:
 Reads and effects need the current buffer attached to the loci client — i.e. a file beneath a `.loci/`
 directory. Open a vault file first.
 
+## "server still starting (~4s on first launch)"
+
+The vault's server was still initializing when a `:Loci*` command ran (first attach after opening a vault
+file takes a few seconds). This is informational, not an error — wait a moment and retry. If it persists
+long after the first launch, check the attach (`:lua =vim.lsp.get_clients({ name = 'loci' })[1]` and
+`:LspLog`).
+
 ## A code action applied but the buffer looks unchanged
 
 The engine wrote the file (it's the sole writer) and the client ran `:checktime` to reload. `:checktime`
