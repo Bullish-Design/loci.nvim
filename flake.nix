@@ -44,6 +44,12 @@
           loci-nvim = pkgs.callPackage ./nix/loci-nvim.nix { };
           # Thin re-export of loci-core's server binary (→ nix-nvim PATH).
           loci-lsp = loci-core.packages.${system}.loci-lsp;
+          # Thin re-export of loci-core's CLI (`loci`) — the vault BOOTSTRAP path
+          # (`loci repository.init`) and the out-of-editor arm. It rides the same
+          # DAG hop as loci-lsp so nix-nvim keeps ONE edge to loci-core; without
+          # this the binary exists only inside the loci-lsp wrapper's own PATH and
+          # never reaches the user's profile.
+          loci = loci-core.packages.${system}.loci-core;
           default = self.packages.${system}.loci-nvim;
         });
 
