@@ -1,1 +1,15 @@
 trunk = "main"
+
+# The release-tag semver source. Consumers pin this repo BY TAG
+# (nix-nvim: `github:Bullish-Design/loci.nvim?ref=vX.Y.Z`), so the tag is the
+# published interface and `gitman release` is the only sanctioned way to cut one.
+#
+# This is deliberately NOT nix/loci-nvim.nix's `version` — that string is the
+# nixpkgs "0-unstable-<date>" convention for the plugin derivation and follows a
+# different scheme. The two are independent by design, not a drift hazard.
+#
+# Seeded at 0.1.3 to match the last hand-cut tag, so `gitman release patch` picks
+# up from the real history.
+[version]
+file = "VERSION"
+pattern = "{version}"
