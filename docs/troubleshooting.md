@@ -52,3 +52,15 @@ uv tool install --force --from ~/Documents/Projects/loci-core/lsp loci-lsp
 
 Only `missing_loci_id` is auto-fixable today (`doctor_fix`). For other findings, open the file from the doctor
 hub and fix it manually, or run **reconcile** from the status hub (`<leader>ls → ▸ reconcile workspace`).
+
+## Fleet `<leader>qS` on a loci tab
+
+`resession.save()` (the fleet `<leader>qS`) saves the current tab as a **GLOBAL**-scoped session. Run on a loci
+tab it overwrites the workspace's session (`loci-<id>.json`) with a global-scoped one. The client now loads
+such sessions safely — `apply_editor_state` forces `reset=false`, so a mis-saved global session restores
+without wiping your buffers, and you get a one-time warning ("…is global-scoped — loaded safely without
+reset… re-save it tab-scoped from the workspace tab").
+
+If you see that warning: from the workspace tab, re-save tab-scoped (`resession.save_tab("loci-<id>")`, or
+use the workspace-aware save binding once the fleet keymap is updated). The fleet keymap itself is owned in
+nix-nvim (out of scope here).

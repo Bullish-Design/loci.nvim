@@ -45,6 +45,38 @@
 >   `fmt_val` renders nested tables instead of `table: 0x…`. All verified headless (F7 warning fires on a
 >   modified buffer; F9 marker cleared on kill + silent on graceful stop; F12 abort notify + empty-vocab
 >   omission; F11 path rejection exercised via the safe-join).
+>
+> **Follow-up pass (2026-08-03):** the last open finding (F5) is closed and the verification suite is banked
+> into the repo; three follow-ups documented:
+> - **F5 (palette note-creation opens the note) — FIXED.** `run_palette` now opens the created note for the
+>   note-creating verbs (`note.create`/`note.daily`/`note.scratch` — response `content_path`, via the same
+>   `open_new_note` the direct verbs use) and for `loci.start-work` (response `primary_content_path`). The
+>   open happens AFTER the reload / `apply_editor_state` — and the pin is the CLIENT OBJECT captured at
+>   palette entry, because start-work's `apply_editor_state` runs `resession.load`, which detaches every
+>   buffer from its client (re-resolving by bufnr afterwards finds no client at all — verified during the
+>   fix). `root_dir`/`open_content`/`open_linked`/`M.activate` now accept a client object like
+>   `resolve_client`. Verified red→green headless (`t08`/`t09` fail on the pre-fix client, pass after).
+> - **Regression harness — banked.** The ephemeral `/tmp/loci-review` harness was ported to
+>   `.scratch/tests/` (`run-tests.sh` + fakeservers + fixture vaults; resession.nvim v1.2.0 vendored; real
+>   `loci-lsp` used by one end-to-end F9 test). Hermetic: fresh sandbox per test (no stray `.loci` marker
+>   dirs / sessions between tests), 20 checks green covering F1/F2/F3/F4/F6/F7/F8/F9/F12, the session
+>   landmine, single-vault + no-client regressions, and the F5 tests. Runner exits non-zero on any failure.
+> - **(3a) Attach-latency UX — FIXED.** `M.read`/`M.command` distinguish "no client" from "client still
+>   initializing" (`vim.lsp.get_clients({ name, _uninitialized = true })`, filtered to genuinely
+>   uninitialized clients) and notify "server still starting (~4s on first launch)" instead of "open a file
+>   inside a loci vault". Covered headless (`t03`).
+> - **(3b) Fleet `<leader>qS` guard — DOCUMENTED (nix-nvim is out of scope, read-only).** On a loci tab,
+>   `resession.save()` (GLOBAL) overwrites the workspace session as a global-scoped one; the client now
+>   loads such sessions safely (`reset=false`) and warns once. See
+>   [the note below](#fleet-leaderqsg-guard) and `docs/troubleshooting.md`.
+> - **(3c) loci-core pin drift — DOCUMENTED, lock left alone.** The flake pins `57c83f4`; the local checkout
+>   is ahead (`5cdf2ca`). `5cdf2ca` IS pushed and git+ssh-reachable, so the pin was tried — but the
+>   re-exported `loci-lsp-tests` check FAILS at that rev (`ModuleNotFoundError: knappy.wikilinks`), so
+>   bumping would break `nix flake check`. Lock reverted to `57c83f4`; bump deferred until loci-core's flake
+>   wires the knappy input. Contract surfaces the client depends on (envelope, palette, deactivate request
+>   model, activation plan) were verified against the local tree and are architecturally stable.
+> - **(3d) `nix flake check` — GREEN** on the final committed state (client fixes + reverted pin; version
+>   stamp already `0-unstable-2026-08-03`).
 
 **Reviewer scope:** `lua/loci/init.lua` (883 lines), `flake.nix`, `nix/loci-nvim.nix`, `docs/*`, plus the
 engine at `loci-core` (`lsp/loci_lsp/*.py`, `src/loci_core/{control,domain,ops,requests}.py`) for wire-contract
@@ -327,3 +359,39 @@ requires a hostile server; they are ordinary two-vault or first-activation flows
   checked (envelope, palette, deactivate request model, activation plan) are architecturally stable.
 - **haunt/resession/wayfinder runtime behavior** inside a real activation (APIs verified by the author in
   commit 262bbc2; not re-run here).
+
+---
+
+## Follow-ups (2026-08-03)
+
+### Fleet `<leader>qS` guard
+
+**Scope note:** nix-nvim is READ-ONLY from here, so the fleet keymap cannot be
+fixed in this repo — this section records the hazard + the client-side mitigation.
+
+- `resession.save()` (the fleet `<leader>qS`) saves the current tab's buffers as a
+  **GLOBAL-scoped** session. Run on a loci tab, it overwrites the workspace's
+  session file (`loci-<id>.json`) with a global-scoped one — a future activation
+  would then `resession.load` a global session, which by resession's design WIPES
+  every listed buffer (the "reset" behavior).
+- **Client-side mitigation (landed with the F1–F12 pass):** `apply_editor_state`
+  calls `resession.load(name, { silence_errors, reset = false })` — `reset=false`
+  turns the mis-saved global session into a safe restore (a no-op for the designed
+  tab-scoped case), and the client warns once when the session file is
+  global-scoped ("re-save it tab-scoped from the workspace tab").
+- **Fleet-side fix (nix-nvim, NOT done here):** bind the workspace save to
+  `resession.save_tab("loci-<id>", ...)` (tab-scoped) instead of the global
+  `resession.save()` — or drop `<leader>qS` on loci tabs entirely.
+- See also `docs/troubleshooting.md` ("Fleet `<leader>qS` on a loci tab").
+
+### loci-core pin drift
+
+The flake pins `57c83f4`; the local engine checkout is ahead at `5cdf2ca`
+(stage-3). `5cdf2ca` is pushed and git+ssh-reachable — the pin was tried — but the
+re-exported `loci-lsp-tests` check fails at that rev (`ModuleNotFoundError: No
+module named 'knappy.wikilinks'`, the stage-3 wikilink diagnostic depends on a
+knappy surface the loci-core flake at that rev doesn't wire). The lock was
+reverted; bump once loci-core's flake resolves the knappy input. The surfaces the
+client is written against (envelope, palette spec, `workspace.deactivate` request
+model, activation plan / `primary_content_path`) are unchanged across the drift
+and were verified live against the local tree.
