@@ -57,11 +57,13 @@ local function resolve_client(ref)
   return client_for(ref or 0)
 end
 
--- The vault root used to resolve content/linked-file paths = the CURRENT buffer's client root. Anchored to
+-- The vault root used to resolve content/linked-file paths = the current buffer's client root. Anchored to
 -- the buffer on purpose: `vim.lsp.get_clients({ name })[1]` returns the FIRST-attached client, so with two
 -- vaults open in one session that resolution opened the WRONG vault's files (cross-vault contamination).
-local function root_dir(bufnr)
-  local c = client_for(bufnr or 0)
+-- Accepts a bufnr OR a client OBJECT (see `resolve_client`) so a flow whose client survived a session load
+-- (resession.load detaches every buffer) can still resolve the root it captured at entry.
+local function root_dir(ref)
+  local c = resolve_client(ref or 0)
   return c and c.config.root_dir or nil
 end
 
@@ -81,23 +83,34 @@ local function safe_join(root, rel)
   return root .. "/" .. rel
 end
 
--- Knowledge note abs path = <root>/.loci/content/<content_path>. `bufnr` pins the vault of the flow that
--- produced `content_path` (a mid-flow buffer switch must not redirect the open to another vault).
-local function open_content(content_path, bufnr)
+-- Knowledge note abs path = <root>/.loci/content/<content_path>. `ref` pins the vault of the flow that
+-- produced `content_path` (a mid-flow buffer switch must not redirect the open to another vault); it may be
+-- a bufnr or a client OBJECT (see `resolve_client`), so a post-resession-load open still lands in the right
+-- vault even though every buffer is detached.
+local function open_content(content_path, ref)
   if not content_path then
     return
   end
-  local abs = safe_join(root_dir(bufnr or 0), ".loci/content/" .. content_path)
+  local abs = safe_join(root_dir(ref or 0), ".loci/content/" .. content_path)
   if abs then
     open_path(abs)
   end
 end
 
 -- Linked file abs path = <root>/<path>
-local function open_linked(path, bufnr)
-  local abs = safe_join(root_dir(bufnr or 0), path)
+local function open_linked(path, ref)
+  local abs = safe_join(root_dir(ref or 0), path)
   if abs then
     open_path(abs)
+  end
+end
+
+-- Open the note an effect just created (MarkdownObject with `content_path`). `ref` is the flow pin (bufnr
+-- or client object — see `resolve_client`): the palette passes the entry client object so a
+-- post-resession-load open (start-work) still resolves the right root.
+local function open_new_note(value, ref)
+  if value and present(value.content_path) then
+    open_content(value.content_path, ref)
   end
 end
 
@@ -265,16 +278,19 @@ function M.command(name, args, cb, bufnr)
 end
 
 -- Run an effect, then reload the buffer (the engine is the sole writer). `:checktime` won't clobber unsaved.
--- `bufnr` pins the effect + reload to the flow's source buffer (a plain `:checktime` reloads only the
--- CURRENT buffer, which may have changed since the flow started). When the pin is a client OBJECT (no
--- single target buffer, e.g. activation), reload the current buffer. If the target still has unsaved
--- changes after the checktime, it refused to reload: warn NOW, because a later `:w` would silently
--- overwrite the engine's just-written edit (F7).
-local function apply_and_reload(name, args, bufnr)
-  M.command(name, args, function()
+-- `ref` pins the effect + reload to the flow's source buffer (a plain `:checktime` reloads only the
+-- CURRENT buffer, which may have changed since the flow started): a bufnr, or a client OBJECT (see
+-- `resolve_client`) for flows whose entry client survives buffer wipes (no single target buffer -> reload
+-- the current one). When the pin is a client OBJECT (no single target buffer, e.g. activation), reload the
+-- current buffer. If the target still has unsaved changes after the checktime, it refused to reload: warn
+-- NOW, because a later `:w` would silently overwrite the engine's just-written edit (F7).
+-- The optional `after(value)` runs post-reload with the effect's response value (palette note-creating
+-- verbs open the created note there — F5).
+local function apply_and_reload(name, args, ref, after)
+  M.command(name, args, function(value)
     vim.schedule(function()
-      local target = (type(bufnr) == "number" and bufnr ~= 0 and vim.api.nvim_buf_is_valid(bufnr))
-          and bufnr
+      local target = (type(ref) == "number" and ref ~= 0 and vim.api.nvim_buf_is_valid(ref))
+          and ref
         or vim.api.nvim_get_current_buf()
       if vim.api.nvim_buf_is_valid(target) then
         local was_modified = vim.bo[target].modified
@@ -288,15 +304,19 @@ local function apply_and_reload(name, args, bufnr)
           )
         end
       end
+      if after then
+        after(value)
+      end
     end)
-  end, bufnr)
+  end, ref)
 end
 
 -- Deactivate the active workspace: run the effect (NO args — the op clears the Current pointer), then apply
 -- the engine's DeactivationPlan (F4): when the plan says so, save the outgoing workspace's resession session
 -- + wayfinder trail — but ONLY when the current tab/trail really IS that workspace's (never clobber a
 -- different context's data under the workspace's name). Clear the tab-local marker (F8) + reload.
-local function deactivate(bufnr)
+-- `ref` is the flow pin (bufnr or client object — see `resolve_client`); M.command resolves either.
+local function deactivate(ref)
   M.command("loci.workspace.deactivate", {}, function(value)
     vim.schedule(function()
       local wid = present(value) and present(value.workspace_id) and value.workspace_id or nil
@@ -322,7 +342,7 @@ local function deactivate(bufnr)
       vim.cmd("checktime")
       notify("workspace deactivated")
     end)
-  end, bufnr)
+  end, ref)
 end
 
 -- Render a single projected field value (vim.NIL-safe): lists join, tables inspect compactly, `nil`/null -> —.
@@ -467,16 +487,16 @@ end
 
 -- Activate a workspace: apply the engine's editor_state plan, mark the tab, then observe + persist the git
 -- branch/worktree the editor actually checked out (the engine omits `git` on activate — editor-observed).
-function M.activate(workspace_id, bufnr)
+function M.activate(workspace_id, ref)
   if not workspace_id then
     return
   end
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
-  -- Pin the CLIENT OBJECT, not the bufnr: `apply_editor_state` below runs `resession.load`, which (a) wipes
-  -- every buffer for a global-scoped session and (b) detaches every buffer from its client even for a
-  -- tab-scoped one (attach churn under eventignore=all). The client object survives both, so the activate
-  -- and the git writeback still reach the right vault.
-  local client = client_for(bufnr)
+  -- Pin the CLIENT OBJECT (a bufnr or a client object — see `resolve_client`), never a bufnr-only lookup:
+  -- `apply_editor_state` below runs `resession.load`, which (a) wipes every buffer for a global-scoped
+  -- session and (b) detaches every buffer from its client even for a tab-scoped one (attach churn under
+  -- eventignore=all). The client object survives both, so the activate and the git writeback still reach
+  -- the right vault. `resolve_client(nil)` falls back to the current buffer's client, like the old default.
+  local client = resolve_client(ref)
   if not client then
     notify("open a file inside a loci vault", vim.log.levels.WARN)
     return
@@ -741,13 +761,25 @@ local function prompt_args(specs, done)
   step()
 end
 
--- Run a palette command with collected args. The activation flows apply editor_state; everything else just
--- reloads the buffer after the write.
-local function run_palette(command, args, bufnr)
+-- The palette note-creating verbs. The DIRECT verbs (`:LociDaily` etc.) open the created note; the palette
+-- must too (F5). Each returns a MarkdownObject with `content_path`.
+local NOTE_CREATING = {
+  ["loci.note.create"] = true,
+  ["loci.note.daily"] = true,
+  ["loci.note.scratch"] = true,
+}
+
+-- Run a palette command with collected args. The activation flows apply editor_state; the note-creating
+-- verbs open the created note after the reload (F5); everything else just reloads the buffer after the write.
+-- `ref` is the flow pin: M.palette passes the CLIENT OBJECT captured at entry (a bufnr also works), so the
+-- opens here resolve the root from the entry client — `apply_editor_state` (start-work / activate) runs
+-- `resession.load`, which detaches every buffer from its client, so re-resolving by bufnr post-load would
+-- find no client at all.
+local function run_palette(command, args, ref)
   if command == "loci.workspace.activate" then
-    M.activate(args.workspace_id, bufnr)
+    M.activate(args.workspace_id, ref)
   elseif command == "loci.workspace.deactivate" then
-    deactivate(bufnr)
+    deactivate(ref)
   elseif command == "loci.start-work" then
     M.command(command, args, function(value)
       vim.schedule(function()
@@ -755,11 +787,21 @@ local function run_palette(command, args, bufnr)
           apply_editor_state(value.editor_state)
         end
         vim.cmd("checktime")
+        -- F5: the ActivationPlan's `primary_content_path` IS the created note (the engine links it with role
+        -- `primary`), so open it exactly like the direct verbs. The pin is the client OBJECT from palette
+        -- entry: resession.load above detached every buffer, so a bufnr re-resolve would find no client.
+        if value and present(value.primary_content_path) then
+          open_content(value.primary_content_path, ref)
+        end
         notify("started work")
       end)
-    end, bufnr)
+    end, ref)
+  elseif NOTE_CREATING[command] then
+    apply_and_reload(command, args, ref, function(value)
+      open_new_note(value, ref)
+    end)
   else
-    apply_and_reload(command, args, bufnr)
+    apply_and_reload(command, args, ref)
   end
 end
 
@@ -771,6 +813,10 @@ function M.palette()
     notify("open a file inside a loci vault", vim.log.levels.WARN)
     return
   end
+  -- Pin the CLIENT OBJECT (not the bufnr) through the whole palette flow: the note-creating verbs and
+  -- `start-work` OPEN the created note after their effect, and start-work's editor_state runs
+  -- `resession.load` — which detaches every buffer from its client — so a bufnr re-resolve at open time
+  -- would find no client (F5).
   client:request("loci/commands", vim.empty_dict(), function(err, result)
     if err or not result then
       notify("palette unavailable: " .. ((err and err.message) or "no response"), vim.log.levels.ERROR)
@@ -783,7 +829,7 @@ function M.palette()
       end
       pick(items, "Loci palette", function(item)
         prompt_args(item.args, function(collected)
-          run_palette(item.command, collected, bufnr)
+          run_palette(item.command, collected, client)
         end)
       end)
     end)
@@ -1021,12 +1067,7 @@ end
 --
 -- The three note effects (already in the palette) given direct verbs. Each returns the new note record whose
 -- `content_path` we open under <root>/.loci/content/ (confirmed live: the field is `content_path`).
-
-local function open_new_note(value, bufnr)
-  if value and present(value.content_path) then
-    open_content(value.content_path, bufnr)
-  end
-end
+-- (`open_new_note` lives with the other open helpers above — the palette reuses it for F5.)
 
 function M.daily()
   local bufnr = vim.api.nvim_get_current_buf()
