@@ -31,8 +31,10 @@ function M.expect(cond, msg)
   end
 end
 
--- Print PASS/FAIL and exit. Called at the end of every test; the runner greps the
--- RESULT line and treats anything else (crash/hang/timeout) as a failure.
+-- Print PASS/FAIL, stop any lingering loci clients (nvim's exit does NOT close
+-- the stdin of its detached LSP children, so without this every test orphans its
+-- fakeserver processes), then exit. Called at the end of every test; the runner
+-- greps the RESULT line and treats anything else (crash/hang/timeout) as a failure.
 function M.finish()
   if #failures == 0 then
     io.write("RESULT: PASS\n")
@@ -40,6 +42,11 @@ function M.finish()
     io.write("RESULT: FAIL — " .. table.concat(failures, "; ") .. "\n")
   end
   io.flush()
+  for _, cl in ipairs(vim.lsp.get_clients({ name = "loci" })) do
+    pcall(function()
+      cl:stop(true)
+    end)
+  end
   vim.cmd("qa!")
 end
 

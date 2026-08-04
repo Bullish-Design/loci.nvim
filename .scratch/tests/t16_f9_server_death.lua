@@ -25,12 +25,15 @@ end
 vim.t.loci_workspace_id = "ws-1"
 local client = vim.lsp.get_clients({ name = "loci" })[1]
 client:stop()
-vim.wait(1500)
+local gone = c.wait_for(function()
+  return vim.lsp.get_clients({ name = "loci" })[1] == nil
+end, 6000)
+c.expect(gone, "client should be removed after graceful stop")
 c.expect(vim.t.loci_workspace_id == nil, "marker must clear on client exit (F9)")
 c.expect(not c.any_notice("exited"), "graceful stop must be silent")
 
--- force-kill via the server dying abnormally (nonzero exit mid-request): the
--- client's on_exit must clear the marker + surface the recovery hint
+-- abnormal death: the server exits nonzero mid-request; the client's on_exit
+-- must clear the marker + surface the recovery hint
 c.capture_notify()
 vim.cmd("edit " .. vim.fn.fnameescape(c.repo_a .. "/note.md"))
 local reattached = c.wait_for(function()
@@ -45,7 +48,12 @@ end
 vim.t.loci_workspace_id = "ws-2"
 local client2 = vim.lsp.get_clients({ name = "loci" })[1]
 client2:request("workspace/executeCommand", { command = "loci.test.crash", arguments = {} }, function() end)
-vim.wait(1500)
+local died = c.wait_for(function()
+  local cl = vim.lsp.get_clients({ name = "loci" })[1]
+  return cl == nil or cl.id ~= client2.id
+end, 6000)
+c.expect(died, "crashed server should be removed")
+vim.wait(200) -- let the scheduled on_exit callback run
 c.expect(vim.t.loci_workspace_id == nil, "marker must clear on abnormal exit (F9)")
 c.expect(c.any_notice("exited"), "abnormal exit should surface a recovery hint")
 c.finish()

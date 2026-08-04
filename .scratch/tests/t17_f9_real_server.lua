@@ -29,7 +29,10 @@ end
 vim.t.loci_workspace_id = "ws-1"
 local client = vim.lsp.get_clients({ name = "loci" })[1]
 client:stop()
-vim.wait(2000)
+local gone = c.wait_for(function()
+  return vim.lsp.get_clients({ name = "loci" })[1] == nil
+end, 6000)
+c.expect(gone, "client should be removed after graceful stop")
 c.expect(vim.t.loci_workspace_id == nil, "marker must clear on client exit (F9)")
 c.expect(not c.any_notice("exited"), "graceful stop must be silent")
 
@@ -48,7 +51,12 @@ end
 vim.t.loci_workspace_id = "ws-2"
 local client2 = vim.lsp.get_clients({ name = "loci" })[1]
 client2:stop(true)
-vim.wait(2000)
+local gone2 = c.wait_for(function()
+  local cl = vim.lsp.get_clients({ name = "loci" })[1]
+  return cl == nil or cl.id ~= client2.id
+end, 6000)
+c.expect(gone2, "client should be removed after force-stop")
+vim.wait(200)
 c.expect(vim.t.loci_workspace_id == nil, "marker must clear on force-stop (F9)")
 c.expect(not c.any_notice("exited"), "SIGTERM force-stop is the designed-silent set")
 c.finish()

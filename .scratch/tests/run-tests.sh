@@ -67,9 +67,13 @@ run_test() {
   # cwd stays the sandbox (NOT a git repo): F6's "launch dir is not a repo" premise.
 
   # a `loci-lsp` shim on PATH lets the REAL attach() autocmd spawn a fake server
-  # (t16, F9 hygiene) instead of the real binary (t17).
+  # (t16, F9 hygiene) instead of the real binary (t17). The shebang must be a
+  # RESOLVED interpreter: the generic /usr/bin/env does not exist inside the nix
+  # build sandbox (glibc execvp then silently falls through to the real server).
+  local bash_path
+  bash_path="$(command -v bash)"
   cat >"$sandbox/bin/loci-lsp" <<EOF
-#!/usr/bin/env bash
+#!$bash_path
 exec python3 "$TESTS_DIR/fakeservers/fs_index.py" "\$@"
 EOF
   chmod +x "$sandbox/bin/loci-lsp"
@@ -105,6 +109,13 @@ EOF
     printf '%s\n' "$out" | sed 's/^/    /' | tail -25
     return 1
   fi
+}
+
+# Belt-and-braces: a timeout'd/aborted nvim never runs finish(), so its detached
+# LSP children would otherwise linger (they spin on stdin). Kill anything this
+# harness spawned. NOTE: do not run two harness instances concurrently.
+cleanup_fakes() {
+  pkill -f "$TESTS_DIR/fakeservers/fs_" 2>/dev/null || true
 }
 
 # ---- suite --------------------------------------------------------------------
@@ -157,6 +168,7 @@ for entry in "${tests[@]}"; do
     echo "FAIL  $display"
     FAIL=$((FAIL + 1))
   fi
+  cleanup_fakes
 done
 
 echo
