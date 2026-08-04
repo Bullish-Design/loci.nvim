@@ -57,6 +57,19 @@ local function resolve_client(ref)
   return client_for(ref or 0)
 end
 
+-- Is the ONLY-blocking absence an initializing client? `get_clients({ name, _uninitialized = true })` also
+-- lists READY clients (the filter only relaxes the `initialized` requirement), so distinguish precisely:
+-- any loci client that has not finished initialize yet. When true, a read/effect didn't find a vault client
+-- because the server is still booting (~4s on first launch), not because the buffer is outside a vault.
+local function server_starting()
+  for _, c in ipairs(vim.lsp.get_clients({ name = LSP_NAME, _uninitialized = true })) do
+    if not c.initialized then
+      return true
+    end
+  end
+  return false
+end
+
 -- The vault root used to resolve content/linked-file paths = the current buffer's client root. Anchored to
 -- the buffer on purpose: `vim.lsp.get_clients({ name })[1]` returns the FIRST-attached client, so with two
 -- vaults open in one session that resolution opened the WRONG vault's files (cross-vault contamination).
@@ -230,10 +243,16 @@ vim.api.nvim_create_autocmd("LspAttach", {
 -- Default-deny READ over `loci/op` -> the `{ ok, error }` envelope's `value` (or a surfaced error notify).
 -- `bufnr` pins the flow's vault (F3): a bufnr or a client OBJECT (see `resolve_client`), so reads stay on
 -- the flow's client even if the user switched buffers or a session load churned the LSP attachments.
+-- No client at all -> "open a file inside a loci vault"; a client still initializing (~4s on first launch)
+-- -> a distinct "server still starting" notice, so a fast `:Loci*` keypress isn't misread as a wrong file.
 function M.read(op, args, cb, bufnr)
   local client = resolve_client(bufnr)
   if not client then
-    notify("open a file inside a loci vault", vim.log.levels.WARN)
+    if server_starting() then
+      notify("server still starting (~4s on first launch)", vim.log.levels.INFO)
+    else
+      notify("open a file inside a loci vault", vim.log.levels.WARN)
+    end
     return
   end
   client:request("loci/op", { op = op, args = args or vim.empty_dict() }, function(err, result)
@@ -255,7 +274,11 @@ end
 function M.command(name, args, cb, bufnr)
   local client = resolve_client(bufnr)
   if not client then
-    notify("open a file inside a loci vault", vim.log.levels.WARN)
+    if server_starting() then
+      notify("server still starting (~4s on first launch)", vim.log.levels.INFO)
+    else
+      notify("open a file inside a loci vault", vim.log.levels.WARN)
+    end
     return
   end
   client:request("workspace/executeCommand", {
