@@ -43,29 +43,33 @@
           # loci.nvim's OWN output: the plugin derivation (→ nix-nvim rtp).
           loci-nvim = pkgs.callPackage ./nix/loci-nvim.nix { };
           # Thin re-export of loci-core's server binary (→ nix-nvim PATH).
+          # Restored with the V2 LSP host (loci-core project 32 / Q1 Option 1a):
+          # the pygls transport + console script + flake output are back on the
+          # engine's main. The client's wire contract lives in
+          # .scratch/projects/002-loci-core-v2-realignment/04-WIRE-CONTRACT.md.
           loci-lsp = loci-core.packages.${system}.loci-lsp;
-          # Thin re-export of loci-core's CLI (`loci`) — the vault BOOTSTRAP path
-          # (`loci repository.init`) and the out-of-editor arm. It rides the same
-          # DAG hop as loci-lsp so nix-nvim keeps ONE edge to loci-core; without
-          # this the binary exists only inside the loci-lsp wrapper's own PATH and
-          # never reaches the user's profile.
+          # Thin re-export of loci-core's CLI (`loci`) — the out-of-editor arm and
+          # the vault bootstrap path (`loci init`). It rides the same DAG hop as
+          # loci-lsp so nix-nvim keeps ONE edge to loci-core; without this the
+          # binary exists only inside the loci-lsp wrapper's own PATH and never
+          # reaches the user's profile.
           loci = loci-core.packages.${system}.loci-core;
           default = self.packages.${system}.loci-nvim;
         });
 
-      # CI gate as a flake check: the loci-lsp pytest + pytest-lsp suite, re-exported
-      # from loci-core's flake (the engine + pygls + pytest-lsp closure lives there).
+      # CI gates. The engine-side pytest/pytest-lsp gate lives in loci-core's own
+      # flake and is re-exported here (AGENTS.md: the real test gate); the client
+      # gate is the hermetic Lua suite, which now ALSO exercises the real
+      # `loci-lsp` binary (t17 real-server smoke) against this flake's re-export.
       checks = forAllSystems (system:
         let pkgs = pkgsFor system; in {
           loci-lsp-tests = loci-core.checks.${system}.loci-lsp-tests;
 
-          # The headless CLIENT regression suite (.scratch/tests/run-tests.sh): Python
-          # JSON-RPC fakeservers + fixture git vaults + vendored resession, one check
-          # per scenario. Hermetic: fresh sandbox per test, no network, no stray
-          # marker dirs. t17 exercises the REAL loci-lsp — this flake's own re-export
-          # of the pinned loci-core — so the check gates the client against the exact
-          # engine the fleet runs. Needs nvim >= 0.12 (the flake's nixpkgs provides
-          # 0.12.x).
+          # Hermetic client suite: Python JSON-RPC fakeservers (fs_v2.py = a
+          # reference implementation of the V2 wire contract) + fixture git
+          # vaults, one check per scenario — plus t17, which attaches the REAL
+          # loci-lsp (this flake's re-export) and runs a full documents/create
+          # round trip. Needs nvim >= 0.12 (the flake's nixpkgs provides 0.12.x).
           loci-nvim-tests = pkgs.stdenvNoCC.mkDerivation {
             name = "loci-nvim-tests";
             src = nixpkgs.lib.fileset.toSource {

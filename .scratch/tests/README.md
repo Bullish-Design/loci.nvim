@@ -1,82 +1,83 @@
-# loci.nvim — headless regression suite
+# loci.nvim — headless regression suite (V2 wire)
 
 Hermetic, deterministic headless tests for the thin `loci` LSP client
-(`lua/loci/init.lua`). Ported from the ephemeral review harness that verified the
-F1–F12 fixes; every test is one `nvim --headless` invocation against either a
-Python JSON-RPC fakeserver or the real `loci-lsp`, with real fixture git vaults.
+(`lua/loci/init.lua`) **against the V2 wire contract** — see
+`.scratch/projects/002-loci-core-v2-realignment/04-WIRE-CONTRACT.md`. Every test is one
+`nvim --headless` invocation against `fakeservers/fs_v2.py`, a **reference implementation of
+that contract** (registry feature methods `loci/<wire>`, preview routes, `loci.action.execute`,
+pull diagnostics, `loci/saveResult`). Because the fakes implement the *contract* — not a mock of
+the plugin — this suite gates the client against what the engine host must implement, without
+needing the real engine (which is being restored in loci-core, project 002 P0.2).
 
 ## Run
 
 ```bash
-.scratch/tests/run-tests.sh          # the full suite (≈2 min; t17/t20/t21 wait out the real server's ~4s init)
+.scratch/tests/run-tests.sh          # the full suite (≈1 min)
 .scratch/tests/run-tests.sh t05      # filter: run tests whose name matches
-.scratch/tests/run-tests.sh f5       # the Task-1 F5 tests
 ```
 
-Requires on PATH: `nvim` (0.12.x — override with `NVIM=/path/to/nvim`), `python3`,
-`git`, `timeout`. The real `loci-lsp` binary is needed for exactly one test
-(`t17`); the runner also looks in `/etc/profiles/per-user/andrew/bin`.
+Requires on PATH: `nvim` (0.12.x — override with `NVIM=/path/to/nvim`), `python3`, `git`,
+`timeout`. **t17 (real-server smoke) requires the REAL `loci-lsp` + `loci` binaries** (the V2
+engine's build): the runner falls back to `/etc/profiles/per-user/andrew/bin`, and if the
+on-PATH `loci` lacks the `init` verb (stale fleet profile), it builds this flake's own
+`.#loci-lsp` via `nix` and prepends it. The nix check does the same via the checkPhase PATH.
+Every other test is hermetic against the fakes.
 
 ## How it works
 
-- Each test runs in a **fresh sandbox** (`mktemp`): `repoA` (git branch
-  `feature-x`) and `repoB` (branch `main-b`) are recreated per test, so a test can
-  never leak a `.loci` marker dir / session file into the next one. (A stray
-  marker dir makes the attach autocmd spawn a second REAL client and pollute
-  results — that bit the review.)
-- The client plugin is loaded from the repo root (`LOCI_PLUGROOT`); `common.lua`
-  bootstraps the runtimepath, stubs Snacks (the picker), records
-  `vim.notify`, and provides `expect`/`finish`.
-- A test **passes iff its output contains `RESULT: PASS`**; a crash, hang (180s
-  timeout), or failed assertion fails the run and the runner exits non-zero.
-- Session tests use the **real resession.nvim v1.2.0** and **real haunt.nvim
-  v1.2.0**, vendored under `vendor/` (rtp entries). `wayfinder` is **stubbed** to
-  the two API functions the client calls (`trail_active_name`, `trail_save_named`
-  in deactivate; `trail_load_named` in activation) — the real plugin's trail
-  backend needs its interactive layout/picker stack and does not track an active
-  trail headless (verified); the client's calls are pcall-guarded, so the stub
-  exercises exactly the surface the client uses. The review harness stubbed it
-  the same way.
+- Each test runs in a **fresh sandbox** (`mktemp`): `repoA` (git branch `feature-x`) and `repoB`
+  (branch `main-b`) are recreated per test. Fixture vaults have **no** `.loci/` (so the attach
+  autocmd no-ops); tests that need the real attach path create the vault themselves — t15 via a
+  shimmed `.loci/vault.toml`, t17 via the real `loci init` CLI verb.
+- The client plugin is loaded from the repo root (`LOCI_PLUGROOT`); `common.lua` bootstraps the
+  runtimepath, stubs Snacks (the picker), records `vim.notify`, and provides `expect`/`finish`.
+- A test **passes iff its output contains `RESULT: PASS`**; a crash, hang (180s timeout), or
+  failed assertion fails the run and the runner exits non-zero.
+- `vim.ui.input`/`vim.ui.select` are stubbed per test where a prompt is exercised; picker
+  selection is driven by `PICK_MATCH`/`PICK_INDEX` (see `common.lua`).
 
 ## Fakeservers (`fakeservers/`)
 
-Content-Length-framed LSP over stdio; one per scenario shape:
-
 | File | Serves |
 |---|---|
-| `fs_index.py` | read hubs (`project.index`/`workspace.index`); `loci.test.crash` → dies with exit 3 (F9 abnormal exit) |
-| `fs_status.py` | status-hub reads (`workspace.current/summary/get`) + deactivate plan + command log |
-| `fs_doctor.py` | doctor report (one fixable `missing_loci_id`) + command log |
-| `fs_activate.py` | activation plans read from a per-test response file + command log |
-| `fs_commands.py` | crafted `loci/commands` (note.create arg shapes, start-work) + note/plan responses |
-| `fs_slow.py` | delayed `initialize` (attach-latency notice test) |
+| `fs_v2.py` | the **V2 wire contract**: LSP lifecycle (initialize with object-form `textDocumentSync` incl. `save`), `textDocument/diagnostic` pull + `publishDiagnostics` push, `textDocument/codeAction` (data + `command: loci.action.execute`), `workspace/executeCommand` (`loci.action.execute`, `loci.test.crash`), the `loci/<wire>` feature methods + `/preview` routes with the `{ok, value}` envelope (+ `_revision`/`_consistency`), and the `loci/saveResult` notification. Per-test overrides via a JSON response file (argv[2] / `FS_RESPONSE`); diagnostics to push via argv[3] / `FS_DIAGNOSTICS`; every request logged to argv[1] / `FS_LOG`. |
+| `fs_slow.py` | delayed `initialize` (attach-latency notice test). |
 
-`t16` reaches the client's REAL `attach()` path by placing a `loci-lsp` shim
-(first on PATH) that execs `fs_index.py` — so the F9 `on_error`/`on_exit`
-handlers (which only `attach()` registers) are what the assertions exercise.
+Every fakeserver MUST do BOTH of these or it leaks processes when nvim dies:
 
-## Coverage map
+1. **exit on stdin EOF** — `if not chunk: sys.exit(0)` in the header loop. When the spawning nvim
+   exits/crashes, its pipe closes and the server gets EOF; without the guard it busy-spins on
+   `read(1)` forever.
+2. **handle the `exit` notification** — `sys.exit(0)` when `msg.method == "exit"`. nvim's
+   graceful `client:stop()` sends shutdown/exit but KEEPS stdin open, so EOF never arrives; only
+   the `exit` request tells the server to die.
 
-| Test | Finding / behavior |
+`t15` reaches the client's REAL `attach()` path by placing a `loci-lsp` shim (first on PATH, and
+only for t15) that execs `fs_v2.py` — so the F9 `on_error`/`on_exit` handlers (which only
+`attach()` registers) are what the assertions exercise. `t17` reaches the SAME attach path with
+the REAL binary (no shim for t17) and runs a full round trip: `loci init` bootstraps the vault,
+the real pygls host answers `loci/documents/create`, the file lands on disk with the canonical
+`loci:` region, and the D-028 name refusal arrives as a typed envelope notice.
+
+## What the suite pins (scenario → test)
+
+| Scenario | Test |
 |---|---|
-| `t01_module_load` | 8 user commands registered; no client before a vault file |
-| `t02_no_client_warn` | no-client warn ("open a file inside a loci vault") |
-| `t03_latency_notice` | "server still starting" while the only client initializes (Task 3a) |
-| `t04_single_vault` | project hub opens in the one vault |
-| `t05_two_vault_anchor` | F1 root anchoring: opens in the CURRENT vault, not the first client |
-| `t06_midflow_switch` | F3 pinning: open stays in the entry vault across a mid-flow buffer switch |
-| `t07_pinned_checktime` | checktime reloads the PINNED buffer, not the current one |
-| `t08_f5_palette_create` | F5: palette `note.create` opens the created note |
-| `t09_f5_startwork_open` | F5: palette `start-work` opens `primary_content_path` after resession.load churn |
-| `t10_activation_tab` | activation writeback reaches the RIGHT vault through a tab-scoped load |
-| `t11_activation_global` | global-session guard: reset=false, buffer survives, warning fires |
-| `t12_deactivate_happy` | F2/F4/F8: deactivate saves session + trail, clears marker |
-| `t13_deactivate_wrong_tab` | wrong-tab/trail guard: nothing clobbered, marker still cleared |
-| `t14_prompt_args` | F12: required-cancel notifies; empty-vocab never opens a picker |
-| `t15_f7_unsaved_warning` | F7: unsaved-buffer clobber warning fires |
-| `t16_f9_server_death` | F9 through real `attach()`: graceful silent; abnormal exit → hint + marker clear |
-| `t17_f9_real_server` | F9 end-to-end with the real `loci-lsp` (~4s init) |
-| `t18_f6_git` | F6: first activation records the vault root's branch; recorded worktree wins |
-| `t19_code_action_dispatch` | `client:exec_cmd` → `vim.lsp.commands` interception + `ctx.bufnr` (the fleet's tiny-code-action path) |
-| `t20_real_fullstack` | REAL engine: `repository.init` → `M.daily()` → created note written + opened |
-| `t21_real_plugins_activation` | REAL haunt `change_data_dir` + resession load + wayfinder trail in one activation |
+| module load, 10 commands, no early client | t01 |
+| no-client / server-starting notices | t02, t03 |
+| vault-not-initialized refusal (`vault.toml` missing) | t04 |
+| workspace switcher (list→pin→get) | t05, t06 |
+| documents/create (note/daily templates) opens real path | t07, t08 |
+| documents/list kind=project browser | t09 |
+| health hub: maintenance/refresh + graph queries | t10 |
+| code-action dispatch via `loci.action.execute` | t11 |
+| `unmanaged` diagnostic filter (D-047/arch §13) | t12 |
+| CAS save conflict via `loci/saveResult` (D-041) | t13 |
+| archive preview-then-apply (D-032) | t14 |
+| server-death hygiene through real attach (shim) | t15 |
+| workspaces/put create + pin (preview-first) | t16 |
+| **REAL engine**: init → attach → create → open → refusal (V2) | t17 |
+
+The old t09–t21 (palette args, activation, deactivation, editor_state, git writeback, doctor,
+real-server fullstack) are **deleted** — they encoded engine capabilities V2 removed (arch §18).
+The real-server fullstack returns as **t17** against the new engine.

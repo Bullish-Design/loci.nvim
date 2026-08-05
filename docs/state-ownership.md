@@ -1,35 +1,41 @@
 # State ownership
 
-The guiding rule of the rewritten client: **the engine is the sole writer, and the single source of truth.**
-The editor holds no loci state beyond one runtime pointer.
+The guiding rule of the client: **the engine is the sole writer of vault files, and the sole
+source of semantic truth.** The editor holds no loci logic and no durable loci state.
 
-## The engine owns durable state
+## The engine owns semantics and writes
 
-All durable loci state — projects, workspaces, membership, linked files, the active-workspace pointer — lives
-inside the `loci-core` engine and is reached only over `loci-lsp`. The client:
+All semantic decisions — what a valid document is, what a workspace contains, how a code action
+commits — live in `loci-core` (the V2 kernel: `documents/*`, `relations/*`, `workspaces/*`,
+`maintenance/*`, `search/*`, `graph/*`). The client:
 
-- **reads** via the `loci/op` request (a default-deny allowlist of read ops);
-- **writes** only by asking the engine to run an effect command (`workspace/executeCommand`), then reloading
-  the buffer with `:checktime`.
+- **reads** via registry feature methods (`loci/<wire>`, e.g. `loci/documents/list`),
+  returning the `{ok, value}` envelope;
+- **writes** only by running a feature command (or `workspace/executeCommand`
+  `loci.action.execute` for code actions), then reloading the buffer with `:checktime`.
 
-The client never authors a `WorkspaceEdit` or rewrites frontmatter itself. This is why every change goes
-through the palette, the status hub, or a code action — and why a contextual write first runs as a **dry-run**
-the engine projects, so you preview the result before applying.
+The client never authors a `WorkspaceEdit` or rewrites frontmatter itself. Every write the engine
+makes is a **pure planned patch** with source-hash and span-byte preconditions (arch §12.1): it
+can only touch the regions it owns — the canonical `loci:` region and the one shared property it
+is asked to write (`status`). Everything outside those spans is byte-identical. Deletion is not a
+capability at all (arch §11.2) — remove files with Obsidian, a file manager, or a shell; the
+compiler observes the removal like any other change.
 
-## The editor owns one runtime pointer
+## The host owns session state (arch §6.7 / §4.3)
 
-| State | Where | Authoritative? |
+V2 deliberately holds **no** shared `current` pointer, no activation, no editor state — "Core
+returns a host-neutral WorkspaceView and never knows plugin names." What the client keeps:
+
+| State | Where | Notes |
 |---|---|---|
-| Active workspace (durable) | engine | yes |
-| `vim.t.loci_workspace_id` | Neovim, tab-local | no — a runtime convenience |
+| Tab-pinned workspace id | `vim.t.loci_workspace_id` (tab-local) | Set by `:LociWorkspaces`; shown in the statusline as `loci:<id>`. Purely host-side. |
+| Last observed revision/consistency | `vim.t.loci_state` (`{revision, consistency}`) | Filled from every feature response that carries one; lets a statusline show staleness (arch §10.2 — every result names its mode + revision). |
 
-`vim.t.loci_workspace_id` is set by `require("loci").activate(...)` and is what the statusline and other
-tab-local UI read. It mirrors the engine's notion of the active workspace for the current tab; it is **not**
-the source of truth. If they ever disagree, the engine wins — re-activate.
+If you switch tabs or sessions, the pin does not follow — that is the honest model: the engine
+does not know and the client does not pretend otherwise.
 
-## The markdown knowledge layer
+## Documents are real files, not a jail
 
-Knowledge notes are real markdown files under `<vault>/.loci/content/`, carrying a `loci_id` in frontmatter.
-They are co-owned: you edit prose freely, but loci-managed frontmatter (ids, project links, membership) is
-written by the engine. Diagnostics (`loci-doctor`) and code actions are how the engine keeps that frontmatter
-canonical.
+V2 removed the `.loci/content/` content jail (arch §6.1: "Content is not confined beneath an
+engine-owned content jail"). Documents live at their **real vault-relative paths**. There is no
+hidden second tree the engine owns.

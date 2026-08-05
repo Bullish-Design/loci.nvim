@@ -27,8 +27,12 @@ It exports per-system **`packages`**, not option-modules:
 - **tasknotes is NOT a loci concern** — it lives in nix-nvim's `productivity/` config, not
   here. The loci leader maps live in nix-nvim's `keymaps/leader.lua`; loci ships only the
   `:Loci*` user-commands they call.
-- The real test gate is loci-core's **pytest/pytest-lsp** suite (re-exported as the flake
-  check), not a lua harness.
+- The real test gate is loci-core's pytest/pytest-lsp suite (engine-side, re-exported as this
+  flake's `checks.<sys>.loci-lsp-tests`). This repo's flake check `loci-nvim-tests` runs the
+  hermetic Lua suite (`.scratch/tests/run-tests.sh`) against `fakeservers/fs_v2.py` — a
+  reference implementation of the V2 wire contract — plus t17, which attaches the REAL
+  `loci-lsp` (this flake's re-export of the engine's pygls host) for a full `documents/create`
+  round trip.
 
 ## Conventions (inherited from template-nix — do not break)
 - Personal-use-only: hardcode `andrew`; no portability / multi-user ceremony.

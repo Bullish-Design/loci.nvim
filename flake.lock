@@ -1,35 +1,17 @@
 {
   "nodes": {
-    "knappy": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785554043,
-        "narHash": "sha256-7YXcOwfFnsGakuwQL8YqDdoHg6NXsvuUos2bQFFbjM4=",
-        "ref": "main",
-        "rev": "7287f480cbe113691f7608cd428dcb50c93c9f90",
-        "revCount": 16,
-        "type": "git",
-        "url": "ssh://git@github.com/Bullish-Design/knappy.git"
-      },
-      "original": {
-        "ref": "main",
-        "type": "git",
-        "url": "ssh://git@github.com/Bullish-Design/knappy.git"
-      }
-    },
     "loci-core": {
       "inputs": {
-        "knappy": "knappy",
         "nixpkgs": [
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1785806245,
-        "narHash": "sha256-vAnIRzCCgVpA418nbUmhMxPIXgjL0D1/dGe5YtoNCxI=",
+        "lastModified": 1785972225,
+        "narHash": "sha256-EJKJcqUT7FWTMm3/wDIfrpGl3M5uiDF8PbX9V7Cq4BA=",
         "ref": "main",
-        "rev": "d96712646705c5e113537a31d6b078d63285dd83",
-        "revCount": 196,
+        "rev": "4a8d5e2251f5c40081c294730f3222d6cdd57163",
+        "revCount": 257,
         "type": "git",
         "url": "ssh://git@github.com/Bullish-Design/loci-core.git"
       },

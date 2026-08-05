@@ -1,62 +1,56 @@
 # Workspace lifecycle
 
-A workspace is a named working context inside a vault. It may own a git branch/worktree binding, a resession
-tab session, a haunt annotation data dir, a wayfinder trail, associated knowledge notes, and linked source
-files. Activating it restores that editor state.
+A workspace is a **declarative lens** over the vault: a source-controlled YAML manifest at
+`.loci/workspaces/<id>.yaml` (arch §6.7) naming documents (ref + role) and files (path + role).
+There is no engine-side "active workspace" — a tab pins one, and the pin is host state.
 
-Everything below is reached through the eight client commands, the palette, the status hub, or code actions —
-there are no dedicated `:LociWorkspace*` commands anymore.
+Everything below is reached through `:LociWorkspaces`, `:LociStatus`, code actions, or the
+palette. There are no `:LociWorkspace*` commands.
 
 ## Create
 
-The fastest path is the CLI one-shot, which creates a note, a workspace, and activates it:
-
-```bash
-loci start-work "Spike the parser"
+```vim
+:LociWorkspaces   " <leader>lw — picker: "＋ create workspace…" prompts a name
 ```
 
-Inside the editor, the palette (`<leader>lp`) offers both `workspace.create` and `start-work`. The palette's
-`start-work` — like the CLI — creates the note + workspace, activates, and **opens the new note**; the
-note-creating verbs (`note.create`/`note.daily`/`note.scratch`) likewise open the note they create, exactly
-like the direct `:LociNote`/`:LociDaily`/`:LociScratch` commands.
+`workspaces/put` previews its manifest write (the feature's declared pure preview), then commits
+on confirm. The created workspace becomes the tab's pin.
 
-## Switch (activate)
+## Pin / switch
 
 ```vim
-:LociWorkspaces      " <leader>lw — pick from the list, activates on confirm
+:LociWorkspaces      " <leader>lw — pick a workspace; it becomes THIS tab's pin
 ```
 
-Or programmatically: `:lua require("loci").activate("<workspace_id>")`. Activation applies the engine's
-editor-state plan (cwd, haunt, resession, wayfinder) and sets `vim.t.loci_workspace_id`. See
-[the activation section in the README](README.md#activation--what-moves-when-you-switch-workspace).
+There is no activation: the engine returns no editor-state plan (no cwd/resession/haunt/wayfinder
+blocks — those were deleted with the old engine, arch §6.7). The pin (`vim.t.loci_workspace_id`)
+is what the statusline shows; sessions, trails, and working directories are yours to manage.
 
-## Associate knowledge notes & linked files
+## What a workspace contains
 
-From a note buffer, use code actions (`<localleader>a`) — e.g. adopt the note, link it to a project. From the
-**status hub** (`<leader>ls`):
-
-- `▸ link a file to this workspace…` — pick a file, choose a role (`implementation`/`reference`/`related`/
-  `documentation`/`test`).
-- each linked file has an inline `▸ unlink` row.
-
-Knowledge membership and project links are engine effects; the client previews the dry-run and reloads after.
-
-## Reconcile
-
-The old "refresh" pipeline is now the engine's **reconcile** pass (rebuild/repair). Run it from the status hub:
-
-```
-<leader>ls → ▸ reconcile workspace
+```vim
+:LociStatus          " <leader>ls — the pinned workspace's context hub
 ```
 
-## Deactivate / archive
+The hub renders the `WorkspaceView`: the manifest's `project`, its **documents** (ref, role,
+resolved state, current path) and **files** (path, role). Rows open the file at its real
+vault-relative path; an unresolved ref shows its state (`Missing`/`Ambiguous`) instead of
+pretending.
 
-- Deactivate the current workspace: status hub → `▸ deactivate workspace`. Deactivation follows the engine's
-  plan: when the plan says so (and the current tab/trail really is the workspace's), it saves the outgoing
-  workspace's resession tab session + wayfinder trail, then clears the tab marker and reloads — a wrong
-  tab/trail is never clobbered.
-- Archive a workspace: palette (`<leader>lp` → `workspace.archive`). Archiving marks it archived; it does not
-  delete markdown or integration data.
+## Archive / unarchive
 
-> **Clone is gone.** Workspace clone existed in the old monolith and was culled in the rewrite. There is no
-> replacement — create a new workspace instead.
+The status hub's `▸ archive workspace` row calls `workspaces/archive` (typed sugar, D-029).
+Archiving changes exactly the manifest's `archived:` line — composition is preserved (the
+workspace keeps its documents and files) and the write is CAS-protected. It does **not** delete
+markdown or anything else.
+
+## Refresh
+
+V2's compiler refresh is `maintenance/refresh` (read-your-writes is automatic; this is for
+explicit index maintenance). The status hub offers `▸ refresh index`; `:LociDoctor` also
+refreshes as part of the health report. `refresh` reports a real `changed_sources` count and a
+per-code diagnostics summary.
+
+> **Gone for good:** the old `workspace.create`/`start-work` palette verbs, activation with
+> editor-state plans, deactivation with session/trail saves, and workspace clone. The engine
+> deleted them (arch §6.7, §18); the client does not fake them.

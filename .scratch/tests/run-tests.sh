@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-tests.sh — hermetic headless test suite for the loci.nvim client.
+# run-tests.sh — hermetic headless test suite for the loci.nvim client (V2 wire).
 #
 # Each test is one `nvim --headless` invocation in a FRESH sandbox (temp dir):
 # fixture vaults (repoA on `feature-x`, repoB on `main-b`) are recreated per test,
@@ -8,16 +8,17 @@
 # A test passes iff its output contains `RESULT: PASS`; anything else (crash,
 # hang past the timeout, failed assertion) fails the run.
 #
-# Dependencies: nvim (0.12.x), python3, git, timeout. The REAL loci-lsp binary is
-# used by exactly one test (t17, F9 end-to-end); every other test runs against the
-# Python JSON-RPC fakeservers in ./fakeservers. resession.nvim v1.2.0 is vendored
-# under ./vendor/resession (the session tests use the REAL plugin). wayfinder is
-# stubbed to the two API functions the client calls (trail_active_name /
-# trail_save_named) — see README.md for why.
+# Dependencies: nvim (0.12.x), python3, git, timeout. Every test runs against the
+# Python JSON-RPC fakeserver in ./fakeservers — fs_v2.py is a reference
+# implementation of the V2 wire contract (see
+# .scratch/projects/002-loci-core-v2-realignment/04-WIRE-CONTRACT.md) so the Lua
+# suite pins the CONTRACT the engine host must implement. resession/wayfinder are
+# no longer used (activation is gone from V2). t15 exercises the REAL attach()
+# path through a `loci-lsp` shim that execs fs_v2.py.
 #
 # Usage: ./run-tests.sh [test-name-filter]
-#   e.g. ./run-tests.sh t05        # run just the F1 anchoring test
-#        ./run-tests.sh f5         # run every test whose name matches "f5"
+#   e.g. ./run-tests.sh t05        # run just the workspace-list test
+#        ./run-tests.sh t1         # run every test whose name matches "t1"
 
 set -u
 
@@ -35,9 +36,36 @@ if ! command -v loci-lsp >/dev/null 2>&1; then
   export PATH="$PATH:/etc/profiles/per-user/andrew/bin"
 fi
 
+# t17 (real-server smoke) needs a `loci` with the `init` verb AND the matching
+# `loci-lsp` — i.e. the V2 engine's build. The fleet profile can lag the
+# engine (pre-V2 binaries serve an old protocol and die on `loci init`), so
+# when the on-PATH `loci` lacks `init`, prefer THIS flake's own build (the nix
+# check already puts the re-export first on PATH; local runs rebuild once,
+# cached by the store).
+if ! loci --help 2>&1 | grep -qE '^  init'; then
+  if command -v nix >/dev/null 2>&1; then
+    local_loci_bin="$(cd "$REPO_ROOT" && nix build --no-link --print-out-paths .#loci-lsp 2>/dev/null || true)"
+    if [ -n "$local_loci_bin" ] && [ -x "$local_loci_bin/bin/loci-lsp" ]; then
+      export PATH="$local_loci_bin/bin:$PATH"
+      echo "run-tests: using the flake's own loci-lsp/loci ($local_loci_bin)"
+    else
+      echo "run-tests: WARNING on-PATH loci lacks 'init' and nix build failed; t17 will fail" >&2
+    fi
+  fi
+fi
+
 FILTER="${1:-}"
+# Belt-and-braces: a timeout'd/aborted nvim never runs finish(), so its detached
+# LSP children would otherwise linger (they spin on stdin). Kill anything this
+# harness spawned. NOTE: do not run two harness instances concurrently.
+cleanup_fakes() {
+  pkill -f "$TESTS_DIR/fakeservers/fs_" 2>/dev/null || true
+}
+
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/loci-tests.XXXXXX")"
-trap 'rm -rf "$WORK"' EXIT
+# Clean up on EVERY exit (Ctrl-C/abort included), not just between tests: a
+# suite interrupted mid-test would otherwise orphan its fakeservers.
+trap 'rm -rf "$WORK"; cleanup_fakes' EXIT
 
 # ---- fixtures -----------------------------------------------------------------
 
@@ -66,29 +94,31 @@ run_test() {
   setup_vault "$sandbox/repoB" main-b
   # cwd stays the sandbox (NOT a git repo): F6's "launch dir is not a repo" premise.
 
-  # a `loci-lsp` shim on PATH lets the REAL attach() autocmd spawn a fake server
-  # (t16, F9 hygiene) instead of the real binary (t17). The shebang must be a
-  # RESOLVED interpreter: the generic /usr/bin/env does not exist inside the nix
-  # build sandbox (glibc execvp then silently falls through to the real server).
-  local bash_path
-  bash_path="$(command -v bash)"
-  cat >"$sandbox/bin/loci-lsp" <<EOF
+  # A `loci-lsp` shim on PATH lets the REAL attach() autocmd spawn a fake server
+  # instead of the real binary — needed ONLY by t15 (server-death hygiene; the
+  # shim is a fs_v2.py wrapper that can die on command). Every other test uses
+  # spawn_fake explicitly (argv-config'd fs_v2.py) or the REAL binary (t17
+  # real-server smoke), so the shim must NOT shadow PATH for them. The shebang
+  # must be a RESOLVED interpreter: the generic /usr/bin/env does not exist
+  # inside the nix build sandbox (glibc execvp then silently falls through to
+  # the real server). fs_v2.py takes its config from FS_* env vars (inherited
+  # by the shim).
+  if [ "$name" = "t15_server_death" ]; then
+    local bash_path
+    bash_path="$(command -v bash)"
+    cat >"$sandbox/bin/loci-lsp" <<EOF
 #!$bash_path
-exec python3 "$TESTS_DIR/fakeservers/fs_index.py" "\$@"
+exec python3 "$TESTS_DIR/fakeservers/fs_v2.py"
 EOF
-  chmod +x "$sandbox/bin/loci-lsp"
-
-  # per-test response files (paths are sandbox-specific, so they are crafted here)
-  cat >"$sandbox/resp_first.json" <<EOF
-{"editor_state": {"git": {"branch": null, "worktree_path": null}}}
-EOF
-  cat >"$sandbox/resp_recorded.json" <<EOF
-{"editor_state": {"git": {"branch": null, "worktree_path": "$sandbox/repoA"}}}
-EOF
+    chmod +x "$sandbox/bin/loci-lsp"
+  fi
 
   local out
   out="$(cd "$sandbox" && env \
     PATH="$sandbox/bin:$PATH" \
+    FS_LOG="$sandbox/fs.log" \
+    FS_RESPONSE="" \
+    FS_DIAGNOSTICS="" \
     LOCI_PLUGROOT="$REPO_ROOT" \
     LOCI_TESTS="$TESTS_DIR" \
     LOCI_WORK="$sandbox" \
@@ -111,13 +141,6 @@ EOF
   fi
 }
 
-# Belt-and-braces: a timeout'd/aborted nvim never runs finish(), so its detached
-# LSP children would otherwise linger (they spin on stdin). Kill anything this
-# harness spawned. NOTE: do not run two harness instances concurrently.
-cleanup_fakes() {
-  pkill -f "$TESTS_DIR/fakeservers/fs_" 2>/dev/null || true
-}
-
 # ---- suite --------------------------------------------------------------------
 
 # entries: "name", "name|label", or "name|label|VAR=value VAR2=value2"
@@ -125,26 +148,20 @@ tests=(
   "t01_module_load"
   "t02_no_client_warn"
   "t03_latency_notice"
-  "t04_single_vault"
-  "t05_two_vault_anchor"
-  "t06_midflow_switch"
-  "t07_pinned_checktime"
-  "t08_f5_palette_create"
-  "t09_f5_startwork_open"
-  "t10_activation_tab"
-  "t11_activation_global"
-  "t12_deactivate_happy"
-  "t13_deactivate_wrong_tab"
-  "t14_prompt_args|cancel|CASE=A"
-  "t14_prompt_args|empty-vocab|CASE=B"
-  "t15_f7_unsaved_warning"
-  "t16_f9_server_death"
-  "t17_f9_real_server"
-  "t18_f6_git|first|CASE=first"
-  "t18_f6_git|recorded|CASE=recorded"
-  "t19_code_action_dispatch"
-  "t20_real_fullstack"
-  "t21_real_plugins_activation"
+  "t04_not_initialized"
+  "t05_workspace_list"
+  "t06_status_hub"
+  "t07_note_create"
+  "t08_daily"
+  "t09_projects"
+  "t10_health"
+  "t11_code_action"
+  "t12_diag_filter"
+  "t13_save_result"
+  "t14_archive"
+  "t15_server_death"
+  "t16_create_workspace"
+  "t17_real_fullstack"
 )
 
 PASS=0
