@@ -36,7 +36,12 @@ For every registry feature, a custom method named **`loci/<wire_name>`** (e.g. `
 - **Params:** one JSON object whose keys are the request model's field names (snake_case as in the
   dataclasses: `{ref: "notes/a.md"}`, `{workspace_id: "..."}`, `{include_archived: true}`,
   `{name: "x", kind: "project", body: "..."}`). Omitted optional fields take the model defaults.
-  (`VaultPath` fields accept plain relative paths.)
+  (`VaultPath` fields accept plain relative paths.) Confirmed request fields for the 003 verbs
+  (registry, 2026-08-05): `documents/adopt` `{path, proposed_id?}`; `documents/move`
+  `{source, destination}`; `graph/neighbors|traversal|project_members` `{ref, depth?}`;
+  `workspaces/put` `{name, project?, documents?: [{ref, role}], files?: [{path, role}], archived?, workspace_id?}`
+  — `files`/`documents` entries are OBJECTS, not `[path, role]` arrays, and a PUT **replaces** the
+  whole (wholly-owned) manifest, so the client read-modify-writes.
 - **Response — the CLI envelope, always:** `{ok: true, value: <projected result>}` or
   `{ok: false, error: {kind: <LociError subclass name>, message: <str>}}`.
 - **Projection:** the CLI `_to_json` semantics — dataclass → `{field: value}` (incl. `None`), nested
@@ -68,6 +73,8 @@ Every feature value carries **`_revision` and `_consistency`** (all feature hand
 | `documents/get` | `{document: DocumentView, _revision, _consistency}` — `DocumentView` = `{path, id, kind, title, status, state, identity_state}` |
 | `documents/list` | `{documents: [DocumentView…], _revision, _consistency}` |
 | `documents/create` (commit) | `{document: DocumentView\|null, commit, revision, _revision, _consistency}` |
+| `documents/adopt` (commit) | `{document: DocumentView, commit, revision, _revision, _consistency}` (VERIFIED 003 — `AdoptRequest` is `{path, proposed_id?}`) |
+| `documents/move` (commit) | `{document: DocumentView\|null, commit, revision, _revision, _consistency}` (VERIFIED 003 — `MoveDocumentRequest` is `{source, destination}`; `document` is null when the move was refused) |
 | `workspaces/list` | `{workspaces: [WorkspaceView…], _revision, _consistency}` |
 | `workspaces/get` | `{view: WorkspaceView, _revision, _consistency}` — `WorkspaceView` = `{id, name, path, project, archived, documents: [[ref, role, resource_id, state, current_path]…], files: [[path, role]…]}` |
 | `workspaces/put` | `{workspace_id, path, commits, adopted_members, revision, _revision, _consistency}` |
@@ -75,11 +82,13 @@ Every feature value carries **`_revision` and `_consistency`** (all feature hand
 | `maintenance/refresh` | `{revision, consistency, changed_sources, diagnostics_summary: [[code, count]…], _revision, _consistency}` |
 | `search/text` | `{results: [[path, resource_id, management_state, title, snippet, score]…], _revision, _consistency}` |
 | `graph/backlinks` | `{rows: [[source_path, kind, raw_target]…], _revision, _consistency}` |
+| `graph/neighbors` | `{rows: [path…], _revision, _consistency}` — FLAT paths, no kind column (VERIFIED 003: `Graph.neighbors` is `sorted(inbound | outgoing)` path set; `GraphQueryRequest` is `{ref, depth}`) |
+| `graph/project_members` | `{rows: [[path, kind, title]…], _revision, _consistency}` (VERIFIED 003 — reverse membership: resources whose `project` property names the ref) |
 | `graph/broken_links` | `{rows: [[source_path, raw_target, kind]…], _revision, _consistency}` |
 | `graph/missing_attachments` / `graph/ambiguous_links` | `{rows: [[source_path, raw_target]…], _revision, _consistency}` |
 | `graph/orphans` | `{rows: [path…], _revision, _consistency}` |
-| `graph/traversal` | `{rows: [[path, depth]…], _revision, _consistency}` |
-| `loci/<wire>/preview` (mutating) | `{command, refusals: […], changes: [{kind, path, destination, before_excerpt, after_excerpt, diagnostics}…]}` — the CLI's CommandPreview projection (verified: `documents/create` preview without `--apply` returns exactly this, plus `_committed: false` in JSON mode; the host may include `_committed: false` too) |
+| `graph/traversal` | `{rows: [[path, depth]…], _revision, _consistency}` — bounded BFS; `GraphQueryRequest` `{ref, depth}` (depth default 3, NOT `max_depth`) |
+| `loci/<wire>/preview` (mutating) | `{command, refusals: […], changes: [{kind, path, destination, before_excerpt, after_excerpt, diagnostics}…]}` — the CLI's CommandPreview projection (verified: `documents/create` preview without `--apply` returns exactly this, plus `_committed: false` in JSON mode; the host may include `_committed: false` too). `documents/adopt`/`documents/move` previews echo the request's `path`/`source`+`destination` (verified 003: `preview_adopt` plans a `patch` change on the request path; `preview_move` emits `kind: "move"` with the request's source → destination and refuses `same_path`/`destination_exists`/`source_missing`). |
 
 ## Startup failure modes the client must surface
 

@@ -129,6 +129,23 @@ DEFAULTS = {
         "document": _doc("notes/x.md", title="x", kind=None),
         "commit": {"status": "committed"}, "revision": "r1",
     },
+    "loci/documents/adopt": {
+        "document": _doc("notes/a.md", title="a"),
+        "commit": {"status": "committed"}, "revision": "r1",
+    },
+    "loci/documents/adopt/preview": {
+        "command": "documents/adopt", "refusals": [],
+        "changes": [{"kind": "patch", "path": "notes/a.md",
+                     "before_excerpt": "", "after_excerpt": "loci: id-a"}],
+    },
+    "loci/documents/move": {
+        "document": _doc("notes/b.md", title="b"),
+        "commit": {"status": "committed"}, "revision": "r1",
+    },
+    "loci/documents/move/preview": {
+        "command": "documents/move", "refusals": [],
+        "changes": [{"kind": "move", "path": "notes/a.md", "destination": "notes/b.md"}],
+    },
     "loci/maintenance/refresh": {
         "revision": "r2", "consistency": "current", "changed_sources": 1,
         "diagnostics_summary": [["unmanaged", 2]],
@@ -138,6 +155,9 @@ DEFAULTS = {
     "loci/graph/ambiguous_links": {"rows": []},
     "loci/graph/orphans": {"rows": ["notes/a.md"]},
     "loci/graph/backlinks": {"rows": [["notes/b.md", "wikilink", "[[a]]"]]},
+    "loci/graph/neighbors": {"rows": ["notes/b.md", "notes/c.md"]},
+    "loci/graph/project_members": {"rows": [["notes/b.md", "note", "Note B"]]},
+    "loci/graph/traversal": {"rows": [["notes/a.md", 0], ["notes/b.md", 1], ["notes/c.md", 1]]},
     "loci/search/text": {"results": [["notes/a.md", "id-a", "managed", "Note A", "...snippet...", -1.2]]},
     "textDocument/codeAction": [
         {
@@ -156,7 +176,26 @@ def feature_value(method, params):
     if method in _overrides:
         return _overrides[method]
     if method in DEFAULTS:
-        return _env(method, DEFAULTS[method])
+        value = _env(method, DEFAULTS[method])
+        if isinstance(value, dict):
+            # workspaces/put (and its preview) accepts full `files`/`documents`
+            # lists (the engine's manifest is wholly-owned: a PUT replaces the
+            # composition, so the client read-modify-writes). Echo the params so
+            # the link-file round trip is assertable.
+            if method in ("loci/workspaces/put", "loci/workspaces/put/preview"):
+                for key in ("files", "documents"):
+                    if params.get(key):
+                        value[key] = params[key]
+            # move/adopt previews plan against the REQUEST's paths (the real
+            # engine's preview_move/preview_adopt echo request.source/destination
+            # and request.path), so echo them instead of the static fixture.
+            if method == "loci/documents/move/preview":
+                value["changes"] = [{"kind": "move", "path": params.get("source") or "notes/a.md",
+                                     "destination": params.get("destination") or "notes/b.md"}]
+            if method == "loci/documents/adopt/preview":
+                value["changes"] = [{"kind": "patch", "path": params.get("path") or "notes/a.md",
+                                     "before_excerpt": "", "after_excerpt": "loci: id-a"}]
+        return value
     return {}
 
 

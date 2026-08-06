@@ -37,6 +37,21 @@ resolved state, current path) and **files** (path, role). Rows open the file at 
 vault-relative path; an unresolved ref shows its state (`Missing`/`Ambiguous`) instead of
 pretending.
 
+## Link a file to the workspace
+
+```vim
+:LociLinkFile        " current buffer's file -> the TAB-pinned workspace (role picker)
+```
+
+A workspace manifest is **wholly owned**: `workspaces/put` *replaces* the composition (the
+engine re-renders the manifest from the request — there is no merge). So `:LociLinkFile` is a
+**full read-modify-write**: it reads the pinned workspace's view (`workspaces/get`), refuses
+client-side if the file is already linked, appends the current buffer's vault-relative path with
+the picked role, and PUTs the whole state back — project, documents *and* files (round-tripping
+only the files list would silently wipe the workspace's documents/project). Preview-first (the
+feature's declared pure `workspaces/put/preview` route, D-032), then applies, then refreshes the
+status hub. Roles: `implementation`, `reference`, `related`, `documentation`, `test`.
+
 ## Archive / unarchive
 
 The status hub's `▸ archive workspace` row calls `workspaces/archive` (typed sugar, D-029).

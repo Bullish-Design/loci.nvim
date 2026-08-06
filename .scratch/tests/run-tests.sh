@@ -162,6 +162,14 @@ tests=(
   "t15_server_death"
   "t16_create_workspace"
   "t17_real_fullstack"
+  "t18_link_file"
+  "t19_neighbors"
+  "t20_traversal"
+  "t21_move_document"
+  "t22_adopt_standalone"
+  "t23_palette_registry"
+  "t24_unmanaged_toggle"
+  "t25_statusline_segment"
 )
 
 PASS=0

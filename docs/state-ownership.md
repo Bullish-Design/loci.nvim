@@ -29,7 +29,23 @@ returns a host-neutral WorkspaceView and never knows plugin names." What the cli
 | State | Where | Notes |
 |---|---|---|
 | Tab-pinned workspace id | `vim.t.loci_workspace_id` (tab-local) | Set by `:LociWorkspaces`; shown in the statusline as `loci:<id>`. Purely host-side. |
-| Last observed revision/consistency | `vim.t.loci_state` (`{revision, consistency}`) | Filled from every feature response that carries one; lets a statusline show staleness (arch §10.2 — every result names its mode + revision). |
+| Last observed revision/consistency | `vim.t.loci_state` (`{revision, consistency}`) | Filled from every feature response that carries one; the statusline staleness segment is built from it (arch §10.2 — every result names its mode + revision). |
+| Unmanaged-diagnostics visibility | `vim.g.loci_show_unmanaged` (global, default `false`) | Host-side display state: the diagnostic filter drops `unmanaged` rows unless this is set (arch §13); flip it with `:LociToggleUnmanaged`. |
+
+## The statusline staleness segment (`M.statusline()`)
+
+`vim.t.loci_state` is populated by every feature response (the envelope always carries
+`_revision` + `_consistency`), and `require("loci").statusline()` builds the display segment
+from it — a pure table read + string concat, safe to call from statusline tickers:
+
+| Segment | Meaning |
+|---|---|
+| `""` | nothing observed yet (no vault client, or no feature has run) |
+| `"<rev>"` | the last read was **current** (index + files agree) |
+| `"<rev>!"` | the last read was **indexed** (a stale-index read — the `!` surfaces it) |
+
+The consumer is **nix-nvim**'s statusline (downstream in the DAG: loci.nvim → nix-nvim): it
+renders e.g. `loci:r1!`. The contract lives here; the wiring lives downstream.
 
 If you switch tabs or sessions, the pin does not follow — that is the honest model: the engine
 does not know and the client does not pretend otherwise.

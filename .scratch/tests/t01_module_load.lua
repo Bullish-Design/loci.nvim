@@ -1,5 +1,7 @@
--- t01 — module load: require("loci") self-initializes and registers the 10 user
--- commands, with no client spawned before a vault file is opened.
+-- t01 — module load: require("loci") self-initializes and registers the user
+-- commands (10 original + the 003 verbs: adopt/move/link-file/neighbors/
+-- traversal/project-members/toggle-unmanaged), with no client spawned before a
+-- vault file is opened.
 local c = dofile(vim.env.LOCI_TESTS .. "/common.lua")
 local loci = require("loci")
 local cmds = vim.api.nvim_get_commands({})
@@ -10,6 +12,8 @@ end
 local expected = {
   "locipalette", "locistatus", "lociworkspaces", "lociprojects", "locidoctor",
   "locidaily", "lociscratch", "locinote", "locisearch", "locibacklinks",
+  "lociadopt", "locimove", "locilinkfile", "locineighbors", "locitraversal",
+  "lociprojectmembers", "locitoggleunmanaged",
 }
 for _, name in ipairs(expected) do
   c.expect(lower[name] == true, "user command missing: " .. name)

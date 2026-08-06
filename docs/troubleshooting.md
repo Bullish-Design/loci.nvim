@@ -52,6 +52,20 @@ is silent by design.
 (`active`, `todo`, `in progress`, …). This is a capability gap on purpose: the engine never
 commits bytes whose meaning differs from what you asked.
 
+## "move refused" (LociMove)
+
+The engine plans `documents/move` against the request's `source`/`destination` and surfaces its
+refusals as envelope errors (typed notices): `same_path` (source == destination),
+`destination_exists` (the target already has a file), `source_missing` (the source isn't there —
+reload and retry). The move itself is CAS-protected on the source hash, so a concurrent external
+edit between preview and apply makes the engine refuse rather than clobber.
+
+## "is already linked (…)" (LociLinkFile)
+
+`:LociLinkFile` refuses client-side when the current file already has a role in the pinned
+workspace's manifest (read-modify-write dedupes before any PUT). Unlink by editing the manifest
+(`.loci/workspaces/<id>.yaml` `files:` list) out-of-band — deletion is not a wire capability.
+
 ## A code action applied but the buffer looks unchanged
 
 The engine wrote the file (it's the sole writer) and the client ran `:checktime` to reload.

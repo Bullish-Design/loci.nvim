@@ -40,11 +40,11 @@ Neovim  ──▶  lua/loci/init.lua  ──▶  loci-lsp (pygls host)  ──�
 | Concept | What it is |
 |---|---|
 | **Vault** | A directory containing `.loci/vault.toml` (the V2 manifest). One `loci-lsp` server runs per vault. |
-| **Document** | A markdown file under the vault. **Unmanaged** by default (an informational diagnostic); **adoption** (`documents/adopt`, reachable as a code action) stamps a stable id into the canonical `loci:` region. |
+| **Document** | A markdown file under the vault. **Unmanaged** by default (an informational diagnostic); **adoption** (`documents/adopt`, as a code action or `:LociAdopt`) stamps a stable id into the canonical `loci:` region. |
 | **Project** | A managed document whose policy-mapped kind is `project` — there is no separate project entity (arch §11.2). |
 | **Workspace** | A declarative lens over the vault: a source-controlled manifest at `.loci/workspaces/<id>.yaml` naming documents (ref/role) and files (path/role). You **pin** one per tab; the engine stores no "current". |
 | **Linked file** | A vault file attached to a workspace manifest with a role (`implementation`, `reference`, `related`, `documentation`, `test`). |
-| **Graph / search** | Backlinks, broken links, missing attachments, ambiguous links, orphans (hard graph), and FTS5 full-text search. |
+| **Graph / search** | Backlinks, neighbors, traversal, broken links, missing attachments, ambiguous links, orphans (hard graph), and FTS5 full-text search. |
 
 ### Ownership model
 
@@ -122,9 +122,13 @@ Open **any** file under the vault with `nv` (the Nix-wrapped `nvim`). The client
 ### Automatic surfaces
 
 - **Diagnostics** — served by the server with **real UTF-16 ranges** (D-041). V2 emits four
-  families: `unmanaged` (informational — **filtered out by the client by default**, arch §13),
-  `missing_target`, `ambiguous_link`, `degraded_identity` (plus the pre-existing envelope/YAML
-  families). Rendered by `vim.diagnostic`.
+  families: `unmanaged` (informational — **filtered out by the client by default**, arch §13;
+  flip with `:LociToggleUnmanaged` or `vim.g.loci_show_unmanaged`), `missing_target`,
+  `ambiguous_link`, `degraded_identity` (plus the pre-existing envelope/YAML families). Rendered
+  by `vim.diagnostic`.
+- **Statusline staleness** — the last feature response's revision/consistency is exposed as
+  `require("loci").statusline()` (`<rev>` current, `<rev>!` stale-index read — see
+  [state-ownership.md](state-ownership.md)); nix-nvim renders it as `loci:<rev>[!]`.
 - **Code actions** — `<localleader>a` (tiny-code-action) on a document offers `documents.adopt`,
   `documents.format_owned`, `documents.set_status`. The client intercepts
   `loci.action.execute`, applies, reloads, and surfaces refusals (e.g. `set_status` refuses
@@ -139,8 +143,8 @@ All hubs are snacks pickers. The `<leader>l` group:
 
 | Keymap | Command | What |
 |---|---|---|
-| `<leader>lp` | `:LociPalette` | The client's own verbs (note/project/workspace/health/search/…) |
-| `<leader>ls` | `:LociStatus` | Pinned workspace's context hub (documents, files, archive, refresh) |
+| `<leader>lp` | `:LociPalette` | The client's own verbs (note/project/workspace/health/search/graph/link/…) |
+| `<leader>ls` | `:LociStatus` | Pinned workspace's context hub (documents, files, link file, archive, refresh) |
 | `<leader>lw` | `:LociWorkspaces` | List workspaces → pin one for this tab; create a workspace |
 | `<leader>lP` | `:LociProjects` | Managed documents whose kind is `project` → open |
 | `<leader>ld` | `:LociDoctor` | Vault health: refresh + diagnostics summary + broken/ambiguous links & orphans |
@@ -149,9 +153,17 @@ All hubs are snacks pickers. The `<leader>l` group:
 | `<leader>lnn` | `:LociNote` | `documents/create` (name is validated — no `/`, D-028) |
 | — | `:LociSearch` | FTS5 full-text search over managed + unmanaged documents |
 | — | `:LociBacklinks` | Inbound resolved relations for the current note |
+| — | `:LociNeighbors` | `graph/neighbors` of the current note (backlinks + outgoing targets) |
+| — | `:LociTraversal` | `graph/traversal` from the current note (rows carry depth) |
+| — | `:LociProjectMembers` | `graph/project_members` — resources whose properties name the current note as a project |
+| — | `:LociAdopt` | Standalone `documents/adopt` for the current buffer's document (preview-then-apply) |
+| — | `:LociMove` | `documents/move` — prompt a destination, preview, apply, open the moved file |
+| — | `:LociLinkFile` | Link the current buffer's file to the tab-pinned workspace (role picker) |
+| — | `:LociToggleUnmanaged` | Flip `vim.g.loci_show_unmanaged` (unmanaged diagnostic rows) |
 
-That's the **entire** command surface. Anything more specific (adopt, set status, archive, link a
-file) is reached through a code action or the status hub.
+That's the **entire** command surface — document, graph, and workspace verbs included. Anything
+more specific (set status, archive, adopt-as-code-action) is reached through a code action or the
+status hub.
 
 > `<leader>n` (top-level "Notes") is a **separate** group for Obsidian/TaskNotes/haunt — not loci.
 

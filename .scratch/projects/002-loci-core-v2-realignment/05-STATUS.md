@@ -45,8 +45,21 @@ raw-stdio wire suite + loci init tests") implements project 32 exactly as specif
 fleet profile should be rebuilt from nix-meta when convenient so interactive Neovim uses the new
 host. That is the DAG downstream (`loci-core → loci.nvim → nix-nvim → nix-terminal → nix-meta`).
 
-## Remaining (optional, from 02-PLAN P3)
+## Remaining (optional, from 02-PLAN P3) — DONE in 003
 
-Link-a-file-to-workspace (`workspaces/put` files list), registry-derived palette (Q5),
-`graph/neighbors`/`traversal` views, `documents/move` UI, standalone adoption verb, statusline
-staleness segment (`vim.t.loci_state` is populated; nothing consumes it yet).
+All closed by project 003 (`003-loci-v2-remaining-capabilities`, see its
+IMPLEMENTATION-GUIDE.md): link-a-file-to-workspace (`:LociLinkFile`, `workspaces/put`
+`files` read-modify-write + roles), registry-mirrored palette (Q5 — curated client table;
+engine-side `loci/registry` introspection noted as a loci-core follow-up),
+`graph/neighbors`/`traversal`/`project_members` views (`:LociNeighbors`, `:LociTraversal`,
+`:LociProjectMembers`), `documents/move` UI (`:LociMove`), standalone adoption verb
+(`:LociAdopt`), statusline staleness segment (`M.statusline()` — `<rev>` / `<rev>!`), and the
+Q3 `unmanaged` escape hatch (`vim.g.loci_show_unmanaged` + `:LociToggleUnmanaged`).
+Verified shapes were backfilled into `04-WIRE-CONTRACT.md`; the deltas vs the guide's
+assumptions (put `files` are dicts not arrays; put replaces; `move` is `{source, destination}`;
+`adopt` is `{path}`; neighbors rows are flat paths; traversal is `{ref, depth}`) are pinned by
+tests t18–t25.
+
+**Downstream (nix-nvim, out of this repo — listed, not done):** consume `M.statusline()`
+(or `vim.t.loci_state`) in the statusline (`loci:<rev>[!]`); `<leader>l` keymaps for the new
+commands; fleet profile rebuild (`/etc/profiles/per-user/andrew`) — still pending from 002.

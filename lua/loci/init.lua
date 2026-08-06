@@ -357,6 +357,99 @@ function M.pin(workspace_id)
   vim.t.loci_workspace_id = workspace_id
 end
 
+-- The five link roles (docs/README): the engine stores any string, the picker
+-- offers the curated set.
+local ROLES = { "implementation", "reference", "related", "documentation", "test" }
+
+-- Link the CURRENT buffer's file to the tab-pinned workspace (`workspaces/put`
+-- `files` list). The manifest is wholly-owned and a PUT REPLACES the composition
+-- (workspaces.py: "update: wholly-owned manifest, atomic full replace" — 003
+-- decision #1): the request IS the manifest, so this is a FULL read-modify-write
+-- — it round-trips the `workspaces/get` view's project, documents and files, and
+-- only then appends `{path, role}` for the current file (a duplicate path is
+-- refused client-side before any write). Preview-then-apply (D-032); the status
+-- hub refreshes after apply.
+function M.link_file()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local wid = vim.t.loci_workspace_id
+  local root = root_dir(bufnr)
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if not wid then
+    notify("no workspace pinned in this tab — :LociWorkspaces to pick one", vim.log.levels.INFO)
+    return
+  end
+  if not root or name == "" then
+    notify("open a file inside a loci vault", vim.log.levels.WARN)
+    return
+  end
+  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
+  if rel == "" then
+    notify("not a vault file", vim.log.levels.WARN)
+    return
+  end
+  pick(vim.tbl_map(function(r) return { text = r } end, ROLES), "Role for " .. rel .. ":", function(role_item)
+    local role = role_item and role_item.text
+    if not role then
+      return
+    end
+    M.read("workspaces/get", { workspace_id = wid }, function(value)
+      vim.schedule(function()
+        local ws = value and value.view
+        if not ws then
+          notify("workspace " .. tostring(wid) .. " not found", vim.log.levels.WARN)
+          return
+        end
+        local files = {}
+        for _, f in ipairs(ws.files or {}) do
+          files[#files + 1] = { path = f[1], role = f[2] }
+        end
+        for _, f in ipairs(files) do
+          if f.path == rel then
+            notify(rel .. " is already linked (" .. tostring(f.role) .. ")")
+            return
+          end
+        end
+        files[#files + 1] = { path = rel, role = role }
+        local docs = {}
+        for _, d in ipairs(ws.documents or {}) do
+          docs[#docs + 1] = { ref = d[1], role = d[2] }
+        end
+        local params = {
+          workspace_id = wid,
+          name = ws.name,
+          files = files,
+          documents = docs,
+          archived = ws.archived == true,
+        }
+        if present(ws.project) then
+          params.project = ws.project
+        end
+        preview_then_apply("workspaces/put", params,
+          function() return ("Link %s as %s?"):format(rel, role) end,
+          bufnr, function() M.status() end)
+      end)
+    end, bufnr)
+  end)
+end
+
+-- Statusline staleness segment (arch §10.2 — every result names its mode +
+-- revision). `vim.t.loci_state` ({revision, consistency}) is populated by every
+-- feature response; the consumer is nix-nvim's statusline (downstream in the
+-- DAG), but the segment builder + its contract belong here (host-owned display).
+-- Contract:
+--   ""     -> nothing observed yet (no vault client, or no feature has run)
+--   "<rev>"   -> current (index + files agree)
+--   "<rev>!"  -> consistency is "indexed" (a stale-index read) — surface it
+-- Consumers (nix-nvim) render e.g. `loci:r1!`. Keep this fn a pure table read +
+-- string concat (no vim.schedule/vim.ui) so tickers can call it safely.
+function M.statusline()
+  local st = vim.t.loci_state
+  if not st or not st.revision then
+    return ""
+  end
+  return st.revision .. (st.consistency ~= "current" and "!" or "")
+end
+
 -- Resolve a workspace manifest `project` ref (id or path) and open its document.
 local function resolve_and_open(ref, bufnr)
   if not ref then
@@ -432,6 +525,12 @@ function M.status()
         text = "  ▸ refresh index",
         action = function()
           M.refresh(bufnr)
+        end,
+      }
+      rows[#rows + 1] = {
+        text = "  ▸ link current file",
+        action = function()
+          M.link_file()
         end,
       }
       rows[#rows + 1] = {
@@ -657,6 +756,66 @@ function M.new_note()
   end)
 end
 
+-- Standalone adoption verb: `documents/adopt` for the CURRENT buffer's document
+-- (AdoptRequest: `{path, proposed_id?}` — the code action already uses it; this is
+-- the direct surface). The engine validates (managed doc, `loci:` region write);
+-- we only compute the vault-relative ref and preview-then-apply (D-032), and the
+-- apply path reloads via `:checktime` (the engine is the sole writer).
+function M.adopt()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local root = root_dir(bufnr)
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if not root or name == "" then
+    notify("open a file inside a loci vault", vim.log.levels.WARN)
+    return
+  end
+  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
+  if rel == "" then
+    notify("not a vault file", vim.log.levels.WARN)
+    return
+  end
+  preview_then_apply("documents/adopt", { path = rel }, function()
+    return "Adopt " .. rel .. "?"
+  end, bufnr)
+end
+
+-- Move the current buffer's document (`documents/move`, preview route D-032).
+-- MoveDocumentRequest: `{source, destination}` — the destination is a
+-- vault-relative path; the engine validates + plans the move (same_path /
+-- destination_exists / source_missing refusals) and CASes the move itself
+-- (D-037: no expected_hash field on the wire). The committed result carries
+-- `.document` (None if the move was refused), so after apply we open the
+-- moved file.
+function M.move_document()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local root = root_dir(bufnr)
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if not root or name == "" then
+    notify("open a file inside a loci vault", vim.log.levels.WARN)
+    return
+  end
+  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
+  if rel == "" then
+    notify("not a vault file", vim.log.levels.WARN)
+    return
+  end
+  vim.ui.input({ prompt = "Move to (vault-relative path): " }, function(dest)
+    if not dest or vim.trim(dest) == "" then
+      return
+    end
+    dest = vim.trim(dest)
+    if dest:sub(1, 1) == "/" or dest:find("\\") or dest:match("(^|/)%.%./") then
+      notify("destination must be a vault-relative path", vim.log.levels.WARN)
+      return
+    end
+    preview_then_apply("documents/move", { source = rel, destination = dest },
+      function() return ("Move %s → %s?"):format(rel, dest) end,
+      bufnr, function(value)
+        open_new_document(value, bufnr) -- value.document.path (decision 003 #3)
+      end)
+  end)
+end
+
 -- ── search / backlinks (new V2 capabilities) ────────────────────────────────
 
 -- Full-text search over `search/text` (FTS5); rows: (path, resource_id, state, title, snippet, score).
@@ -717,26 +876,95 @@ function M.backlinks()
   end, bufnr)
 end
 
+-- Per-note graph pickers (`graph/neighbors` + `graph/traversal`, and the
+-- `graph/project_members` reverse-membership view). All three are GraphQueryRequest
+-- (`{ref, depth}` — depth defaults to 3; the engine's bounded BFS). Same
+-- ref-resolution shape as M.backlinks. Row shapes differ per wire, so the caller
+-- supplies a display suffix fn:
+--   neighbors:       rows are FLAT paths (strings) — no suffix
+--   traversal:       rows are [path, depth]   — "  (depth n)"
+--   project_members: rows are [path, kind, title] — "  (kind)"
+-- First column is always the path; selecting a row opens it at its real vault path.
+local function graph_picker(wire, prompt_fmt, suffix_fn)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local root = root_dir(bufnr)
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if not root or name == "" then
+    notify("open a file inside a loci vault", vim.log.levels.WARN)
+    return
+  end
+  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
+  if rel == "" then
+    notify("not a vault file", vim.log.levels.WARN)
+    return
+  end
+  M.read(wire, { ref = rel }, function(value)
+    vim.schedule(function()
+      local items = {}
+      for _, r in ipairs((value and value.rows) or {}) do
+        local path = (type(r) == "table") and r[1] or r
+        items[#items + 1] = {
+          text = tostring(path) .. (suffix_fn and suffix_fn(r) or ""),
+          path = path,
+        }
+      end
+      pick(items, (prompt_fmt or wire):format(rel), function(item)
+        if item.path then
+          open_vault_path(item.path, bufnr)
+        end
+      end)
+    end)
+  end, bufnr)
+end
+
+function M.neighbors()
+  graph_picker("graph/neighbors", "Neighbors of %s")
+end
+
+function M.traversal()
+  graph_picker("graph/traversal", "Traversal from %s", function(r)
+    return string.format("  (depth %s)", tostring(r[2]))
+  end)
+end
+
+function M.project_members()
+  graph_picker("graph/project_members", "Project members of %s", function(r)
+    return string.format("  (%s)", tostring(r[2]))
+  end)
+end
+
 -- ── palette ─────────────────────────────────────────────────────────────────
 
--- Command palette: a static picker over the client's OWN verbs. The old engine-driven
--- `loci/commands` palette is gone (§11.2); the 24 registry features are reachable through these
--- verbs + code actions. A registry-derived palette is a future option (Q5).
+-- Command palette: a static picker over the client's OWN verbs, mirrored from the
+-- 24-wire registry (04-WIRE-CONTRACT.md). The old engine-driven `loci/commands`
+-- palette is gone (§11.2). A TRUE registry-INTROSPECTED palette would need a
+-- loci-core wire method (e.g. `loci/registry` returning the wire names + request
+-- models) — that is an engine-side option, out of scope here (003 decision #6);
+-- this curated table IS the registry-derived surface for now, and adding a verb =
+-- adding one row. Read features run M.read + pick; mutating features prompt args
+-- then preview_then_apply; bespoke verbs (daily/scratch/new-note) stay on top.
+local PALETTE_ITEMS = {
+  { text = "New note", action = function() M.new_note() end }, -- bespoke verb
+  { text = "Daily note", action = function() M.daily() end },
+  { text = "Scratch note", action = function() M.scratch() end },
+  { text = "Adopt current note", action = function() M.adopt() end },
+  { text = "Move current note", action = function() M.move_document() end },
+  { text = "Projects", action = function() M.projects() end },
+  { text = "Workspaces", action = function() M.workspaces() end },
+  { text = "Status / workspace context", action = function() M.status() end },
+  { text = "Link current file to workspace", action = function() M.link_file() end },
+  { text = "Vault health", action = function() M.doctor() end },
+  { text = "Search", action = function() M.search() end },
+  { text = "Backlinks", action = function() M.backlinks() end },
+  { text = "Neighbors", action = function() M.neighbors() end },
+  { text = "Traversal", action = function() M.traversal() end },
+  { text = "Project members", action = function() M.project_members() end },
+  { text = "Refresh index", action = function() M.refresh(vim.api.nvim_get_current_buf()) end },
+  { text = "Toggle unmanaged diagnostics", action = function() M.toggle_unmanaged() end }, -- settings
+}
+
 function M.palette()
-  local bufnr = vim.api.nvim_get_current_buf()
-  local items = {
-    { text = "New note", action = function() M.new_note() end },
-    { text = "Daily note", action = function() M.daily() end },
-    { text = "Scratch note", action = function() M.scratch() end },
-    { text = "Projects", action = function() M.projects() end },
-    { text = "Workspaces", action = function() M.workspaces() end },
-    { text = "Status / workspace context", action = function() M.status() end },
-    { text = "Vault health", action = function() M.doctor() end },
-    { text = "Search", action = function() M.search() end },
-    { text = "Backlinks", action = function() M.backlinks() end },
-    { text = "Refresh index", action = function() M.refresh(bufnr) end },
-  }
-  pick(items, "Loci palette", function(item)
+  pick(PALETTE_ITEMS, "Loci palette", function(item)
     if item.action then
       item.action()
     end
@@ -797,9 +1025,14 @@ end
 -- V2 emits `unmanaged` at information for EVERY unmanaged document (D-047; 4,626 rows on the
 -- representative vault). Arch §13: "Hosts may filter it out entirely by default." Filter it
 -- client-side (scoped to the loci client) so the panel shows actionable diagnostics only.
+-- Q3 escape hatch: a user who WANTS the informational rows sets vim.g.loci_show_unmanaged
+-- (default false — the filter is unconditional today) or runs :LociToggleUnmanaged.
 -- nvim pulls diagnostics (`textDocument/diagnostic`) when the host advertises diagnosticProvider,
 -- so BOTH the pull handler and the push handler are wrapped.
 local function filter_loci_unmanaged(items)
+  if vim.g.loci_show_unmanaged then
+    return items or {}
+  end
   local out = {}
   for _, d in ipairs(items or {}) do
     if not (d.code == "unmanaged") then
@@ -807,6 +1040,11 @@ local function filter_loci_unmanaged(items)
     end
   end
   return out
+end
+
+function M.toggle_unmanaged()
+  vim.g.loci_show_unmanaged = not vim.g.loci_show_unmanaged
+  notify("unmanaged diagnostics " .. (vim.g.loci_show_unmanaged and "shown" or "filtered"))
 end
 
 local on_pull_diag = vim.lsp.handlers["textDocument/diagnostic"]
@@ -857,5 +1095,12 @@ vim.api.nvim_create_user_command("LociScratch", M.scratch, { desc = "Loci scratc
 vim.api.nvim_create_user_command("LociNote", M.new_note, { desc = "Loci new note" })
 vim.api.nvim_create_user_command("LociSearch", M.search, { desc = "Loci full-text search" })
 vim.api.nvim_create_user_command("LociBacklinks", M.backlinks, { desc = "Loci backlinks for the current note" })
+vim.api.nvim_create_user_command("LociNeighbors", M.neighbors, { desc = "Loci graph neighbors of the current note" })
+vim.api.nvim_create_user_command("LociTraversal", M.traversal, { desc = "Loci graph traversal from the current note" })
+vim.api.nvim_create_user_command("LociProjectMembers", M.project_members, { desc = "Loci project members of the current note" })
+vim.api.nvim_create_user_command("LociLinkFile", M.link_file, { desc = "Loci link the current file to the pinned workspace" })
+vim.api.nvim_create_user_command("LociToggleUnmanaged", M.toggle_unmanaged, { desc = "Loci toggle unmanaged diagnostic rows" })
+vim.api.nvim_create_user_command("LociAdopt", M.adopt, { desc = "Loci adopt the current buffer's document" })
+vim.api.nvim_create_user_command("LociMove", M.move_document, { desc = "Loci move the current buffer's document" })
 
 return M
