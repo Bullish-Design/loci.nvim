@@ -7,9 +7,13 @@ local today = os.date("%Y-%m-%d")
 -- make the fake return the real date path so the open is meaningful
 local resp = {
   ["loci/documents/create"] = {
-    document = { path = "notes/" .. today .. ".md", id = "id-d", kind = "daily",
-                 title = today, status = nil, state = "managed", identity_state = "ok" },
-    commit = { status = "committed" }, revision = "r1",
+    -- fixture vocabulary matches the engine's (004 R6): a UUID id, an
+    -- IdentityState member ("managed" — never "ok"), and a real-width revision.
+    document = { path = "notes/" .. today .. ".md", id = "019ff76e-1b9d-7000-afa3-aac4e98a4727",
+                 kind = "daily", title = today, status = "active", state = "managed",
+                 identity_state = "managed" },
+    commit = { status = "committed" },
+    revision = "36df3e971186d143265440d83e223052b48d2d17843e4696d8f5d66190c84455",
   },
 }
 local f = io.open(c.work .. "/respA.json", "w")

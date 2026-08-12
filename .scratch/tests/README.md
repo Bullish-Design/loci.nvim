@@ -43,6 +43,34 @@ Every other test is hermetic against the fakes.
 | `fs_v2.py` | the **V2 wire contract**: LSP lifecycle (initialize with object-form `textDocumentSync` incl. `save`), `textDocument/diagnostic` pull + `publishDiagnostics` push, `textDocument/codeAction` (data + `command: loci.action.execute`), `workspace/executeCommand` (`loci.action.execute`, `loci.test.crash`), the `loci/<wire>` feature methods + `/preview` routes with the `{ok, value}` envelope (+ `_revision`/`_consistency`), and the `loci/saveResult` notification. Per-test overrides via a JSON response file (argv[2] / `FS_RESPONSE`); diagnostics to push via argv[3] / `FS_DIAGNOSTICS`; every request logged to argv[1] / `FS_LOG`. |
 | `fs_slow.py` | delayed `initialize` (attach-latency notice test). |
 
+### Fixture fidelity — the one rule
+
+> **A fixture value must have the same SHAPE, WIDTH, and VOCABULARY as the engine's, even when
+> the test only cares about one field.**
+
+This is not style. A statusline bug shipped to a real vault because `fs_v2` returned a 2-char
+revision (`"r1"`) where the engine returns a 64-char content hash: the segment was green in CI at
+2 chars and unusable at 64. The audit that followed
+(`.scratch/projects/004-fakeserver-fidelity-audit/REPORT.md`) found twelve more instances of the
+same bias — fixtures hand-authored to be *readable* rather than *representative*. Concretely:
+
+* **Width** — revisions are 64-char hashes; ids are UUIDs. Never a short token.
+* **Vocabulary** — only values the engine can actually emit. `identity_state` is
+  `none|managed|degraded`; it is never `"ok"` (a value this file invented, which the whole suite
+  would have validated). Cover the real spread of `kind`/`status`, not a convenient subset.
+* **Shape** — every field the engine sends, including ones the client currently ignores
+  (`saveResult.uri`, `workspaces/list[].documents`). Omitting a field silently removes it from
+  the design space: no test can tell "we chose not to use it" from "we cannot".
+* **Content** — real text, with the newlines real text contains. Search snippets are raw document
+  bodies; link columns are resolved target names (`"Note 4538"`), never wikilink syntax.
+
+`capture-fixtures.sh` re-captures ground truth from the real engine — run it after an engine
+change rather than hand-editing values back into place.
+
+Two override keys exist so the fake can misbehave on purpose (a fake that always succeeds cannot
+test failure): `"__drop__": [method, ...]` never answers those methods, and an override carrying
+an `"ok"` key is sent as the whole envelope, making `{ok: false, error}` refusals expressible.
+
 Every fakeserver MUST do BOTH of these or it leaks processes when nvim dies:
 
 1. **exit on stdin EOF** — `if not chunk: sys.exit(0)` in the header loop. When the spawning nvim

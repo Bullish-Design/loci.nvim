@@ -72,6 +72,11 @@
           # round trip. Needs nvim >= 0.12 (the flake's nixpkgs provides 0.12.x).
           loci-nvim-tests = pkgs.stdenvNoCC.mkDerivation {
             name = "loci-nvim-tests";
+            # NB: a flake's source is the GIT TREE, so untracked files (the
+            # fakeservers' `__pycache__`, and any new test not yet added) never
+            # reach this derivation — no bytecode filtering is needed here. The
+            # corollary bites the other way: a new test file must be tracked or
+            # this check cannot see it.
             src = nixpkgs.lib.fileset.toSource {
               root = ./.;
               fileset = nixpkgs.lib.fileset.unions [

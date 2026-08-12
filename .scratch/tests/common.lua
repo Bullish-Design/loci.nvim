@@ -104,6 +104,16 @@ _G.Snacks = {
   },
 }
 
+-- Replace the picker with an OBSERVER: `fn(items, title)` runs for every pick and
+-- nothing is auto-confirmed. Use this when the assertion is about what the user
+-- would be shown (that a picker rendered at all, and with which rows) rather than
+-- about what happens after choosing a row.
+function M.stub_pick(fn)
+  _G.Snacks.picker.pick = function(opts)
+    fn(opts.items or {}, opts.title)
+  end
+end
+
 -- ---- helpers ----------------------------------------------------------------
 
 function M.spawn_fake(root, script, ...)

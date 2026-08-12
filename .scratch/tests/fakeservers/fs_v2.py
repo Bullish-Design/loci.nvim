@@ -15,6 +15,15 @@ Reference implementation of the contract in
 Config (argv wins, env falls back): LOG, RESPONSE_FILE (JSON dict method -> value
 overrides), DIAGNOSTICS_FILE (JSON list pushed after didOpen). LOG records every
 request as `req <method> <params-json>` plus every saveResult as `save <json>`.
+
+Two RESPONSE_FILE keys are structural rather than per-method values:
+  * `"__drop__": ["loci/graph/orphans", ...]` — never answer these methods, so a
+    test can exercise the client's no-reply path (004 F-09).
+  * an override dict carrying an `"ok"` key is sent as the WHOLE envelope, so
+    `{"ok": false, "error": {...}}` refusals are expressible (004 F-13).
+
+FIDELITY (004): fixture values must match the engine's shape, width, and
+vocabulary — see the block above DEFAULTS and `capture-fixtures.sh`.
 """
 import json
 import os
@@ -67,20 +76,65 @@ def read_msg():
 
 # ---- scripted feature values (the contract shapes; tests override per method) ----
 
-def _doc(path, title=None, kind=None, state="managed"):
-    return {
-        "path": path, "id": "id-" + path.split("/")[-1], "kind": kind,
-        "title": title if title is not None else path.split("/")[-1],
-        "status": "active" if kind == "project" else None,
-        "state": state, "identity_state": "ok" if state == "managed" else "degraded",
-    }
+# ---- fidelity constants (project 004) ---------------------------------------
+#
+# THE RULE (004 R6): a fixture value must have the same SHAPE, WIDTH, and
+# VOCABULARY as the engine's, even when the test only cares about one field.
+# Every finding in 004-fakeserver-fidelity-audit was a violation of it — most
+# notably a statusline bug that shipped green because this file returned a
+# 2-char revision where the engine returns a 64-char hash.
+#
+# Ground truth for every value below was captured from the REAL engine via
+# `loci --json <wire>` against the representative vault; see capture-fixtures.sh
+# to re-capture after an engine change.
 
-
-# The engine's `_revision` is a full 64-char content hash, NOT a short token. The
-# fake used to return "r1", which let a statusline bug (emitting the raw revision,
-# blowing out the line on a real vault) pass the whole suite. Mirror the real
-# width so width-sensitive client code is exercised here instead of in the wild.
+# The engine's `_revision` is a full 64-char content hash, NOT a short token.
 REVISION = "36df3e971186d143265440d83e223052b48d2d17843e4696d8f5d66190c84455"
+# maintenance/refresh reports a *different* revision than the ambient envelope in
+# some flows; keep a second real-width hash so tests can tell them apart.
+REVISION_2 = "bfba77550e4045db186de27411524127c11a197db8640f82fcb2b10bd6daf828"
+
+# The engine's IdentityState enum is NONE | MANAGED | DEGRADED (loci-core
+# features/documents.py). This file used to emit "ok", a value the engine cannot
+# produce — a fiction the whole suite would have validated (004 F-02).
+IDENTITY_STATES = ("none", "managed", "degraded")
+# Real vocabularies, widened from the old {project, None} / {active, None} pair
+# so client filters meet the values a real vault actually contains (004 F-11).
+KINDS = (None, "daily", "task", "project")
+STATUSES = ("active", "waiting", "duplicated")
+
+# Real ids are UUIDs, not "id-<basename>" (004 F-10). Stable per path so tests
+# can still assert on a known id without hand-writing one.
+_IDS = {
+    "projects/p1.md": "d186b97b-c1f8-4fb8-8af9-3272417762ab",
+    "notes/a.md": "7527c974-673b-44f6-81ee-7a2214a96604",
+    "notes/b.md": "2c5e9ebb-023c-4a02-9304-66037237e682",
+    "notes/c.md": "fe9ff155-b7f2-4d8d-b82e-c9401a0c386d",
+    "notes/x.md": "019ff76f-0461-7000-8a27-0b791c9f6c79",
+}
+
+
+def _uuid_for(path):
+    """A stable, real-shaped (36-char, 5-group) UUID for any fixture path."""
+    if path in _IDS:
+        return _IDS[path]
+    h = f"{abs(hash(path)):032x}"[:32]
+    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+
+
+def _doc(path, title=None, kind=None, state="managed", status="active"):
+    """One DocumentView, shaped exactly as `documents/list` returns it.
+
+    The engine sends `status` for EVERY managed document (not just projects) and
+    `identity_state` from the IdentityState enum — both corrected per 004.
+    """
+    return {
+        "path": path, "id": _uuid_for(path), "kind": kind,
+        "title": title if title is not None else path.split("/")[-1],
+        "status": status if state == "managed" else None,
+        "state": state,
+        "identity_state": "managed" if state == "managed" else "none",
+    }
 
 
 def _env(method, value):
@@ -95,9 +149,13 @@ def _env(method, value):
 
 
 DEFAULTS = {
+    # Real `workspaces/list` rows carry `documents`/`files` too — the fake used to
+    # model membership only on `workspaces/get`, so list-row membership reads were
+    # nil under test and populated in production (004 F-07).
     "loci/workspaces/list": {
         "workspaces": [
-            {"id": "ws-1", "name": "WS1", "path": ".loci/workspaces/ws1.yaml", "project": None, "archived": False}
+            {"id": "ws-1", "name": "WS1", "path": ".loci/workspaces/ws1.yaml", "project": None,
+             "archived": False, "documents": [], "files": []}
         ]
     },
     "loci/workspaces/get": {
@@ -108,12 +166,12 @@ DEFAULTS = {
     },
     "loci/workspaces/put": {
         "workspace_id": "ws-2", "path": ".loci/workspaces/ws2.yaml", "commits": [],
-        "adopted_members": [], "revision": "r1",
+        "adopted_members": [], "revision": REVISION,
     },
     "loci/workspaces/archive": {
         "view": {"id": "ws-1", "name": "WS1", "path": ".loci/workspaces/ws1.yaml", "project": None,
                  "archived": True, "documents": [], "files": []},
-        "commit": {"status": "committed"}, "revision": "r1",
+        "commit": {"status": "committed"}, "revision": REVISION,
     },
     "loci/workspaces/archive/preview": {
         "command": "workspaces/archive", "refusals": [],
@@ -125,20 +183,25 @@ DEFAULTS = {
         "changes": [{"kind": "create", "path": ".loci/workspaces/ws2.yaml",
                      "after_excerpt": "schema: 1\nname: NEW"}],
     },
+    # Kind/status span the REAL vocabularies (KINDS/STATUSES). The old pair
+    # {project, None} x {active, None} never exercised a client filter against
+    # values a real vault actually contains — e.g. status "duplicated" (004 F-11).
     "loci/documents/list": {
         "documents": [
-            _doc("projects/p1.md", title="P1", kind="project"),
-            _doc("notes/a.md", title="Note A", kind=None),
+            _doc("projects/p1.md", title="P1", kind="project", status="duplicated"),
+            _doc("notes/a.md", title="Note A", kind=None, status="active"),
+            _doc("notes/b.md", title="Note B", kind="task", status="waiting"),
+            _doc("notes/c.md", title="Note C", kind="daily", status="active"),
         ]
     },
     "loci/documents/get": {"document": _doc("projects/p1.md", title="P1", kind="project")},
     "loci/documents/create": {
         "document": _doc("notes/x.md", title="x", kind=None),
-        "commit": {"status": "committed"}, "revision": "r1",
+        "commit": {"status": "committed"}, "revision": REVISION,
     },
     "loci/documents/adopt": {
         "document": _doc("notes/a.md", title="a"),
-        "commit": {"status": "committed"}, "revision": "r1",
+        "commit": {"status": "committed"}, "revision": REVISION,
     },
     "loci/documents/adopt/preview": {
         "command": "documents/adopt", "refusals": [],
@@ -147,25 +210,45 @@ DEFAULTS = {
     },
     "loci/documents/move": {
         "document": _doc("notes/b.md", title="b"),
-        "commit": {"status": "committed"}, "revision": "r1",
+        "commit": {"status": "committed"}, "revision": REVISION,
     },
     "loci/documents/move/preview": {
         "command": "documents/move", "refusals": [],
         "changes": [{"kind": "move", "path": "notes/a.md", "destination": "notes/b.md"}],
     },
+    # A real vault reports MANY diagnostic kinds with large counts (the reference
+    # vault: 10 kinds, unmanaged=4631). One kind with count 2 never exercised the
+    # summary rendering (004 F-08).
     "loci/maintenance/refresh": {
-        "revision": "r2", "consistency": "current", "changed_sources": 1,
-        "diagnostics_summary": [["unmanaged", 2]],
+        "revision": REVISION_2, "consistency": "current", "changed_sources": 1,
+        "diagnostics_summary": [
+            ["unmanaged", 4631], ["missing_target", 412], ["duplicate_top_level_property", 63],
+            ["noncanonical_loci_metadata", 48], ["yaml_parse_error", 43],
+            ["unterminated_frontmatter", 43], ["degraded_identity", 41],
+            ["unknown_loci_key", 21], ["malformed_loci_id", 16], ["unsupported_loci_schema", 13],
+        ],
     },
-    "loci/graph/broken_links": {"rows": [["notes/a.md", "[[missing]]", "wikilink"]]},
-    "loci/graph/missing_attachments": {"rows": [["notes/a.md", "![[img.png]]"]]},
+    # The engine returns the RESOLVED TARGET NAME, not the raw wikilink syntax:
+    # broken_links[1] and backlinks[2] are bare names ("Note 4538"), never "[[x]]"
+    # (004 F-06). Client code that stripped brackets would be writing against a
+    # fiction the old fixtures validated.
+    "loci/graph/broken_links": {"rows": [["notes/a.md", "Note 4538", "wikilink"]]},
+    "loci/graph/missing_attachments": {"rows": [["notes/a.md", "img.png"]]},
     "loci/graph/ambiguous_links": {"rows": []},
     "loci/graph/orphans": {"rows": ["notes/a.md"]},
-    "loci/graph/backlinks": {"rows": [["notes/b.md", "wikilink", "[[a]]"]]},
+    "loci/graph/backlinks": {"rows": [["notes/b.md", "wikilink", "Note A"]]},
     "loci/graph/neighbors": {"rows": ["notes/b.md", "notes/c.md"]},
     "loci/graph/project_members": {"rows": [["notes/b.md", "note", "Note B"]]},
     "loci/graph/traversal": {"rows": [["notes/a.md", 0], ["notes/b.md", 1], ["notes/c.md", 1]]},
-    "loci/search/text": {"results": [["notes/a.md", "id-a", "managed", "Note A", "...snippet...", -1.2]]},
+    # Real snippets are raw document text and CONTAIN EMBEDDED NEWLINES — a
+    # single-line "...snippet..." hid the fact that rendering results[4] verbatim
+    # would break picker rows (004 F-05).
+    "loci/search/text": {
+        "results": [[
+            "notes/a.md", _uuid_for("notes/a.md"), "managed", "Note A",
+            "# Note A\n\nNote A body. See [[Note B]].\n", -2.7062756914445156,
+        ]]
+    },
     "textDocument/codeAction": [
         {
             "title": "Set status: active", "kind": "quickfix",
@@ -216,11 +299,18 @@ def handle_notification(msg):
                   "params": {"uri": params["textDocument"]["uri"], "diagnostics": _diags}})
         return
     if method == "textDocument/didSave":
-        result = {"committed": True, "reason": "ok", "revision": "r1"}
+        result = {"committed": True, "reason": "ok", "revision": REVISION}
         if "save" in _overrides:
             result = _overrides["save"]
-        send({"jsonrpc": "2.0", "method": "loci/saveResult", "params": dict(result)})
-        log("save " + json.dumps(result))
+        # The engine sends `{uri, **result}` (apps/lsp/server.py:146) — the uri is
+        # how a client attributes a CAS conflict to the buffer that caused it. The
+        # fake used to drop it, which removed per-buffer attribution from the
+        # design space: no test could tell "we chose not to" from "we cannot"
+        # (004 F-03).
+        uri = (params.get("textDocument") or {}).get("uri")
+        payload = {"uri": uri, **result}
+        send({"jsonrpc": "2.0", "method": "loci/saveResult", "params": payload})
+        log("save " + json.dumps(payload))
         return
 
 
@@ -258,6 +348,22 @@ def handle_request(msg):
               "result": {"kind": "full", "items": _diags}})
         return
     # feature methods: loci/<wire> and loci/<wire>/preview
+    #
+    # DROP mode (004 F-09): a method listed under the "__drop__" override key is
+    # never answered. The client must cope with a request that gets no reply --
+    # `M.doctor()`'s 4-way barrier used to hang forever and render nothing, and no
+    # test could reach it because this fake always answered everything.
+    if method in (_overrides.get("__drop__") or []):
+        log("drop " + method)
+        return
+    # REFUSAL mode (004 F-13): `ok` used to be hardcoded True and overrides only
+    # substituted `value`, so a server refusal was INEXPRESSIBLE and the whole
+    # typed-error surface was untestable hermetically. An override carrying an
+    # "ok" key is now sent as the complete envelope.
+    override = _overrides.get(method)
+    if isinstance(override, dict) and "ok" in override:
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": override})
+        return
     value = feature_value(method, params)
     send({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "value": value}})
 

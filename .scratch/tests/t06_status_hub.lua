@@ -9,7 +9,8 @@ local resp = {
     view = {
       id = "ws-1", name = "WS1", path = ".loci/workspaces/ws1.yaml",
       project = "projects/p1.md", archived = false,
-      documents = { { "notes/a.md", "primary", "id-a", "Resolved", "notes/a.md" } },
+      -- real-shaped resource id (a UUID, not "id-a") per 004 R6
+      documents = { { "notes/a.md", "primary", "7527c974-673b-44f6-81ee-7a2214a96604", "Resolved", "notes/a.md" } },
       files = { { "src/x.py", "implementation" } },
     },
   },

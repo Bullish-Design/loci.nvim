@@ -170,6 +170,8 @@ tests=(
   "t23_palette_registry"
   "t24_unmanaged_toggle"
   "t25_statusline_segment"
+  "t26_refusal_envelope"
+  "t27_doctor_partial"
 )
 
 PASS=0

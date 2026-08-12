@@ -235,7 +235,11 @@ vim.api.nvim_create_autocmd("LspAttach", {
 -- file inside a loci vault"; a client still initializing (~4s on first launch) -> a distinct
 -- "server still starting" notice. Records the last observed revision/consistency on `vim.t` so a
 -- statusline can surface staleness (arch §10.2: every result names its mode + revision).
-local function request(method, params, cb, bufnr)
+-- `on_fail` (optional) runs when the request errors or the envelope refuses, AFTER the notice.
+-- Callers that fan out over several requests and join the results need it: without it a single
+-- failure silently strands the join forever, because `cb` is the only signal a request ever
+-- settled (see M.doctor — the 004 F-09 hang).
+local function request(method, params, cb, bufnr, on_fail)
   local client = resolve_client(bufnr)
   if not client then
     if server_starting() then
@@ -243,16 +247,25 @@ local function request(method, params, cb, bufnr)
     else
       notify("open a file inside a loci vault", vim.log.levels.WARN)
     end
+    if on_fail then
+      on_fail()
+    end
     return
   end
   client:request(method, params or vim.empty_dict(), function(err, result)
     if err then
       notify(method .. " failed: " .. (err.message or "request error"), vim.log.levels.ERROR)
+      if on_fail then
+        on_fail()
+      end
       return
     end
     if not (result and result.ok == true) then
       local e = (result and result.error) or {}
       notify(((e.kind and (e.kind .. ": ") or "") .. (e.message or "error")), vim.log.levels.ERROR)
+      if on_fail then
+        on_fail()
+      end
       return
     end
     local value = result.value
@@ -677,22 +690,63 @@ local function render_health(ref, groups, bufnr)
   end)
 end
 
+-- Fan out the four graph findings and join them into ONE health picker.
+--
+-- The join must settle even when a leg does not: a refusing/erroring request never calls its `cb`
+-- (hence `on_fail`), and a request the server simply never answers calls back at all (hence the
+-- deadline). Before 004 F-09 this counted only successes, so a single failed leg left the picker
+-- unrendered with no notice — the command looked like it did nothing. Each leg settles at most
+-- once and the render fires at most once, so a late reply after the deadline is harmless.
+local DOCTOR_DEADLINE_MS = 15000
+
 function M.doctor()
   local bufnr = vim.api.nvim_get_current_buf()
   request("loci/maintenance/refresh", {}, function(ref)
-    local groups = {}
-    local pending = 4
+    local groups, settled, rendered = {}, {}, false
+    local legs = { "broken_links", "missing_attachments", "ambiguous_links", "orphans" }
+
+    local function render(partial)
+      if rendered then
+        return
+      end
+      rendered = true
+      if partial then
+        local missing = {}
+        for _, name in ipairs(legs) do
+          if not settled[name] then
+            missing[#missing + 1] = name
+          end
+        end
+        notify(
+          "vault health is INCOMPLETE — no response for: " .. table.concat(missing, ", "),
+          vim.log.levels.WARN
+        )
+      end
+      render_health(ref, groups, bufnr)
+    end
+
     local function collect(name, rows)
+      if settled[name] then
+        return
+      end
+      settled[name] = true
       groups[name] = rows or {}
-      pending = pending - 1
-      if pending == 0 then
-        render_health(ref, groups, bufnr)
+      if #vim.tbl_keys(settled) == #legs then
+        render(false)
       end
     end
-    request("loci/graph/broken_links", {}, function(v) collect("broken_links", v and v.rows) end, bufnr)
-    request("loci/graph/missing_attachments", {}, function(v) collect("missing_attachments", v and v.rows) end, bufnr)
-    request("loci/graph/ambiguous_links", {}, function(v) collect("ambiguous_links", v and v.rows) end, bufnr)
-    request("loci/graph/orphans", {}, function(v) collect("orphans", v and v.rows) end, bufnr)
+
+    for _, name in ipairs(legs) do
+      request("loci/graph/" .. name, {}, function(v)
+        collect(name, v and v.rows)
+      end, bufnr, function()
+        collect(name, {})
+      end)
+    end
+    -- Nothing above fires if the server never replies; the deadline renders what did arrive.
+    vim.defer_fn(function()
+      render(true)
+    end, DOCTOR_DEADLINE_MS)
   end, bufnr)
 end
 
