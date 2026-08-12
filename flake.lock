@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1786498621,
-        "narHash": "sha256-xwlTUdSeUGvVV9Wng9sHXnZ6h9niZ/VHZ2t4ITACe10=",
+        "lastModified": 1786504847,
+        "narHash": "sha256-dSXE7wa9I4wO4gT+gCgM0BomjqyWz5QnFshmKvOXSqY=",
         "ref": "main",
-        "rev": "81d38baec5d07991e8fa2c5868a43f0435048591",
-        "revCount": 259,
+        "rev": "b611c567e1ecb3efb5a19b32c86363de933b470d",
+        "revCount": 260,
         "type": "git",
         "url": "ssh://git@github.com/Bullish-Design/loci-core.git"
       },
