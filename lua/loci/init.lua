@@ -437,17 +437,26 @@ end
 -- feature response; the consumer is nix-nvim's statusline (downstream in the
 -- DAG), but the segment builder + its contract belong here (host-owned display).
 -- Contract:
---   ""     -> nothing observed yet (no vault client, or no feature has run)
+--   ""        -> nothing observed yet (no vault client, or no feature has run)
 --   "<rev>"   -> current (index + files agree)
 --   "<rev>!"  -> consistency is "indexed" (a stale-index read) — surface it
--- Consumers (nix-nvim) render e.g. `loci:r1!`. Keep this fn a pure table read +
--- string concat (no vim.schedule/vim.ui) so tickers can call it safely.
+-- Consumers (nix-nvim) render e.g. `loci:36df3e9!`. Keep this fn a pure table read
+-- + string concat (no vim.schedule/vim.ui) so tickers can call it safely.
+--
+-- `<rev>` is ABBREVIATED to REV_WIDTH. The engine's revision is a full 64-char
+-- content hash (e.g. 36df3e97...c84455); emitting it raw blew out the statusline
+-- on a real vault. The fakeserver suite missed this for a while because fs_v2
+-- returned a 2-char toy revision ("r1"), so the segment looked fine under test
+-- and only misbehaved against the real server — hence the explicit width
+-- assertion in t25. Git-style 7 is enough to eyeball a revision change.
+local REV_WIDTH = 7
+
 function M.statusline()
   local st = vim.t.loci_state
   if not st or not st.revision then
     return ""
   end
-  return st.revision .. (st.consistency ~= "current" and "!" or "")
+  return tostring(st.revision):sub(1, REV_WIDTH) .. (st.consistency ~= "current" and "!" or "")
 end
 
 -- Resolve a workspace manifest `project` ref (id or path) and open its document.

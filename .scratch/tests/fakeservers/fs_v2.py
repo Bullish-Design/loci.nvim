@@ -76,12 +76,19 @@ def _doc(path, title=None, kind=None, state="managed"):
     }
 
 
+# The engine's `_revision` is a full 64-char content hash, NOT a short token. The
+# fake used to return "r1", which let a statusline bug (emitting the raw revision,
+# blowing out the line on a real vault) pass the whole suite. Mirror the real
+# width so width-sensitive client code is exercised here instead of in the wild.
+REVISION = "36df3e971186d143265440d83e223052b48d2d17843e4696d8f5d66190c84455"
+
+
 def _env(method, value):
     """Append _revision/_consistency to every feature value (the CLI does this for
     every result — all feature handlers return SnapshotResult)."""
     if isinstance(value, dict):
         out = dict(value)
-        out.setdefault("_revision", "r1")
+        out.setdefault("_revision", REVISION)
         out.setdefault("_consistency", "current")
         return out
     return value
