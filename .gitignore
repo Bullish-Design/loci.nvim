@@ -24,9 +24,9 @@ __pycache__/
 result
 result-*
 
-# Agent-files convention (copyroom docs/user/agent-files.md): `.agents/` is
-# dual-use. `.agents/skills/` IS tracked, as are AGENTS.md and CLAUDE.md; the
-# rest of `.agents/` is platform/tool runtime state and stays ignored.
+# Agent-files convention (see AGENTS.md): .agents/skills/ (skills) are tracked,
+# as are AGENTS.md and CLAUDE.md. The rest of .agents/ (e.g. .agents/pi/) is
+# platform/tool runtime state and stays ignored — .agents/ is dual-use on purpose.
 .agents/**
 !.agents/skills/
 !.agents/skills/**

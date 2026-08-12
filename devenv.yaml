@@ -12,5 +12,22 @@ inputs:
     url: path:/home/andrew/Documents/Projects/repoman/modules
     flake: false
 
+  # vendomat: prebuilt wheels for native libs (pyjutsu) from the Nix store. The `git`
+  # manager (gitman) depends on pyjutsu, whose maturin/Rust extension we DON'T compile
+  # here — vendomat's module exports UV_FIND_LINKS so repoman-sync installs the
+  # `wheel:pyjutsu` entry from repoman.lock as a prebuilt wheel instead of building it.
+  vendomat:
+    url: path:/home/andrew/Documents/Projects/vendomat
+
+  # shellij: durable Zellij workbenches, installed by default (not a roster
+  # manager) — RepoMan presence-imports shellij's own devenv module when this
+  # input is declared: shellij/zellij/yazi packages, the guarded `shellij open`
+  # enterShell hook, and YAZI_CONFIG_HOME pointing at the packaged Yazi assets.
+  # Dev: a local path to shellij's checkout. Fleet: github:Bullish-Design/shellij
+  shellij:
+    url: path:/home/andrew/Documents/Projects/shellij
+    flake: false
+
 imports:
   - repoman
+  - vendomat/modules
