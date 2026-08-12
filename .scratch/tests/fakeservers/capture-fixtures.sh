@@ -18,8 +18,14 @@
 # Run it after an engine change: a drift then fails every scenario immediately
 # instead of silently licensing a fixture that lies.
 #
-# Requires the real `loci` CLI on PATH (nix: `nix shell .#loci`). The CLI and the
-# LSP host share LociHost, so the CLI envelope IS the wire envelope.
+# Requires the real `loci` CLI on PATH (nix: `nix shell .#loci`).
+#
+# SCOPE: READS ONLY. For read features the CLI envelope is the wire envelope, but
+# for EFFECTS it is not — the CLI projects a CommandPreview (`{refusals, changes,
+# _committed}`) whereas the LSP host sends the SourceCommit (`{commit: {status,
+# detail, path}, document}`). Capturing an effect here would produce a fixture the
+# client never actually sees; that mistake cost two live bugs (004 F-14/F-15).
+# Probe the running loci-lsp for effect shapes instead.
 set -euo pipefail
 
 VAULT="${1:-}"

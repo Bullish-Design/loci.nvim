@@ -308,6 +308,44 @@ Suite: **28 passing** (was 25). `nix flake check` green.
 
 ---
 
+## Addendum — a gap in this audit's own method (F-14, F-15)
+
+A post-fix drive against the real vault found two more live bugs, and the reason the audit missed
+them matters more than the bugs do.
+
+**The audit's ground truth was the CLI. For *effects*, the CLI is not the wire.** `loci --json
+documents/create` projects a `CommandPreview` (`{command, changes, refusals: [...],
+_committed: false}`), but the LSP host sends the `SourceCommit` itself:
+`{commit: {status, detail, path}, document: null}`. The two disagree on both the success and the
+refusal shape. Reads matched, which is why the diff table above holds — but every effect row was
+validated against a projection the client never sees. The first attempt at the F-14 fix was written
+against the CLI shape and did nothing over the actual wire; the test written alongside it passed,
+because the fixture came from the same wrong source.
+
+**F-14 — a refused effect was silent.** Creating a note whose file already exists is refused, not
+errored: `ok: true`, `commit.status = "precondition_failed"`, `detail = "destination_exists"`.
+`apply_effect` never inspected `commit`, so the single most common everyday mistake produced no
+feedback at all. Now reported: `documents/create did not commit Drive Test Note.md:
+destination_exists`.
+
+**F-15 — `vim.NIL` is truthy, so a refusal crashed the client.** `open_new_document` guarded
+`value.document.path` with `present()` but tested `value.document` for plain truthiness. A refused
+create sends `document: null`, which arrives as `vim.NIL` — a *userdata*, therefore truthy — so the
+guard passed and the index threw `attempt to index a userdata value`. The codebase already had
+`present()` for exactly this hazard; it was applied one level too deep.
+
+**F-16 (fixture) — `commit.status: "committed"` is not a CommitStatus member.** The enum is
+`source_committed | source_committed_cache_failed | precondition_failed | unexpected`. Same class as
+F-02's invented `"ok"`, hidden by the same CLI blind spot. Corrected and added to the contract, so
+`commit.status` is now validated like the other vocabularies.
+
+**Method correction for next time:** capture effect shapes by probing the **live LSP**, not the CLI.
+`capture-fixtures.sh` covers reads only and should say so. The deeper point is the one this project
+keeps re-proving: a fixture is only as good as the thing it was copied from, and the CLI *looked*
+like an authoritative source right up until it wasn't.
+
+---
+
 ## Appendix — real vs fake, by wire
 
 Captured from the real CLI against `/tmp/loci-drive/vault` (5113 notes), 2026-08-12.

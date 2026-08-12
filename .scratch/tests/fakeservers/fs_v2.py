@@ -171,7 +171,7 @@ DEFAULTS = {
     "loci/workspaces/archive": {
         "view": {"id": "ws-1", "name": "WS1", "path": ".loci/workspaces/ws1.yaml", "project": None,
                  "archived": True, "documents": [], "files": []},
-        "commit": {"status": "committed"}, "revision": REVISION,
+        "commit": {"status": "source_committed"}, "revision": REVISION,
     },
     "loci/workspaces/archive/preview": {
         "command": "workspaces/archive", "refusals": [],
@@ -197,11 +197,11 @@ DEFAULTS = {
     "loci/documents/get": {"document": _doc("projects/p1.md", title="P1", kind="project")},
     "loci/documents/create": {
         "document": _doc("notes/x.md", title="x", kind=None),
-        "commit": {"status": "committed"}, "revision": REVISION,
+        "commit": {"status": "source_committed"}, "revision": REVISION,
     },
     "loci/documents/adopt": {
         "document": _doc("notes/a.md", title="a"),
-        "commit": {"status": "committed"}, "revision": REVISION,
+        "commit": {"status": "source_committed"}, "revision": REVISION,
     },
     "loci/documents/adopt/preview": {
         "command": "documents/adopt", "refusals": [],
@@ -210,7 +210,7 @@ DEFAULTS = {
     },
     "loci/documents/move": {
         "document": _doc("notes/b.md", title="b"),
-        "commit": {"status": "committed"}, "revision": REVISION,
+        "commit": {"status": "source_committed"}, "revision": REVISION,
     },
     "loci/documents/move/preview": {
         "command": "documents/move", "refusals": [],
@@ -336,6 +336,16 @@ def _validate_defaults():
         for field in ("revision", "_revision"):
             if field in value:
                 check_revision(f"{wire}.{field}", value[field])
+        # `commit.status` is a CommitStatus member (loci-core fs/outcomes.py). This
+        # file said "committed", which the engine never emits — the same class of
+        # fiction as identity_state "ok", and missed by the 004 audit because that
+        # capture used the CLI, whose effect projection hides the SourceCommit.
+        commit = value.get("commit")
+        if isinstance(commit, dict) and commit.get("status") not in enums["commit_status"]:
+            errors.append(
+                f"{wire}.commit.status={commit.get('status')!r} is not in the engine "
+                f"vocabulary {enums['commit_status']}"
+            )
 
     check_revision("REVISION", REVISION)
     check_revision("REVISION_2", REVISION_2)
@@ -424,7 +434,7 @@ def handle_request(msg):
         if cmd == "loci.test.crash":
             sys.exit(3)
         if cmd == "loci.action.execute":
-            send({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "value": {"applied": True, "commit": {"status": "committed"}}}})
+            send({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "value": {"applied": True, "commit": {"status": "source_committed"}}}})
             return
         send({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "value": {}}})
         return

@@ -288,9 +288,43 @@ end
 -- warn NOW, because a later `:w` would silently overwrite the engine's just-written edit.
 -- The optional `after(value)` runs post-reload with the effect's response value (note-creating
 -- verbs open the created note there).
+-- A REFUSED effect is not an error: the engine answers `ok: true` and reports the outcome in
+-- `commit.status` (loci-core fs/outcomes.py::CommitStatus). Nothing was written, so say so — this
+-- was entirely silent, which reads as "the command did nothing" for one of the most common actions
+-- there is (creating a note whose file already exists -> precondition_failed/destination_exists).
+--
+-- NB the WIRE shape is not the CLI shape. `loci --json documents/create` projects a CommandPreview
+-- (`{refusals: [...], _committed: false}`), but the LSP host sends the SourceCommit itself:
+-- `{commit: {status, detail, path}, document: null}`. Both are handled — the preview route really
+-- does return `refusals` — but `commit.status` is what an effect over LSP actually carries.
+local COMMITTED = { source_committed = true, source_committed_cache_failed = true }
+
+local function report_uncommitted(wire, value)
+  if not present(value) then
+    return false
+  end
+  local refusals = {}
+  for _, r in ipairs(value.refusals or {}) do
+    refusals[#refusals + 1] = tostring(r)
+  end
+  if #refusals > 0 then
+    notify(wire .. " refused: " .. table.concat(refusals, "; "), vim.log.levels.WARN)
+    return true
+  end
+  local commit = present(value.commit) and value.commit or nil
+  if commit and present(commit.status) and not COMMITTED[commit.status] then
+    local why = present(commit.detail) and tostring(commit.detail) or tostring(commit.status)
+    local path = present(commit.path) and (" " .. tostring(commit.path)) or ""
+    notify(wire .. " did not commit" .. path .. ": " .. why, vim.log.levels.WARN)
+    return true
+  end
+  return value._committed == false
+end
+
 local function apply_effect(wire, params, ref, after)
   request("loci/" .. wire, params, function(value)
     vim.schedule(function()
+      report_uncommitted(wire, value)
       local target = (type(ref) == "number" and ref ~= 0 and vim.api.nvim_buf_is_valid(ref))
           and ref
         or vim.api.nvim_get_current_buf()
@@ -772,8 +806,12 @@ end
 
 -- Open the document a create/effect just returned (`DocumentView.path` — a real vault-relative
 -- path, NOT a `.loci/content/` jail path).
+-- `present()` on the document itself, not just its path: a REFUSED effect answers `ok: true` with
+-- `document: null`, and JSON null arrives as `vim.NIL` — which is a truthy userdata in Lua, so the
+-- old `value.document and ...` guard passed and then threw "attempt to index a userdata value" on
+-- the real server. (The fakeserver's create always succeeds, so only a real vault reached it.)
 local function open_new_document(value, ref)
-  if value and value.document and present(value.document.path) then
+  if present(value) and present(value.document) and present(value.document.path) then
     open_vault_path(value.document.path, ref)
   end
 end

@@ -173,6 +173,7 @@ tests=(
   "t26_refusal_envelope"
   "t27_doctor_partial"
   "t28_scale"
+  "t29_refused_effect"
 )
 
 PASS=0

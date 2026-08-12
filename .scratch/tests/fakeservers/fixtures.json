@@ -19,7 +19,13 @@
     "identity_state": ["none", "managed", "degraded"],
     "kind": [null, "daily", "task", "project"],
     "status": [null, "active", "waiting", "duplicated"],
-    "state": ["managed", "unmanaged"]
+    "state": ["managed", "unmanaged"],
+    "commit_status": [
+      "source_committed",
+      "source_committed_cache_failed",
+      "precondition_failed",
+      "unexpected"
+    ]
   },
   "document_keys": ["path", "id", "kind", "title", "status", "state", "identity_state"],
   "workspace_view_keys": ["id", "name", "path", "project", "archived", "documents", "files"],

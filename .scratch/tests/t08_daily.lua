@@ -12,7 +12,7 @@ local resp = {
     document = { path = "notes/" .. today .. ".md", id = "019ff76e-1b9d-7000-afa3-aac4e98a4727",
                  kind = "daily", title = today, status = "active", state = "managed",
                  identity_state = "managed" },
-    commit = { status = "committed" },
+    commit = { status = "source_committed" },
     revision = "36df3e971186d143265440d83e223052b48d2d17843e4696d8f5d66190c84455",
   },
 }
