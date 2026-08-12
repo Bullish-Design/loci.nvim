@@ -43,17 +43,28 @@ c.expect(
 )
 c.expect(vim.tbl_contains(codes(bufnr), "missing_target"), "missing_target must still pass the default filter")
 
--- flip the flag, then PULL diagnostics (the production path: nvim pulls
--- because the host advertises diagnosticProvider) — the same wrapped handler
--- now lets `unmanaged` through
+-- The COMMAND ALONE must make the change visible.
+--
+-- This test used to issue its own `textDocument/diagnostic` request here, which
+-- proved the filter honours the flag but never that the command refreshes
+-- anything — and the command did NOT: it flipped `vim.g.loci_show_unmanaged`,
+-- announced the new mode, and left the screen untouched until the buffer next
+-- changed. Verified against a real vault (1 row before the toggle, 1 after).
+-- No manual re-pull below: `toggle_unmanaged` owns that now.
 vim.cmd("LociToggleUnmanaged")
 c.expect(vim.g.loci_show_unmanaged == true, "the toggle should set vim.g.loci_show_unmanaged")
 c.expect(c.any_notice("unmanaged diagnostics shown"), "the toggle should announce the new mode")
-local client = vim.lsp.get_clients({ name = "loci" })[1]
-client:request("textDocument/diagnostic",
-  { textDocument = { uri = vim.uri_from_bufnr(bufnr) } }, nil, bufnr)
 local shown = c.wait_for(function()
   return vim.tbl_contains(codes(bufnr), "unmanaged")
-end, 4000)
-c.expect(shown, "with loci_show_unmanaged set, unmanaged rows must pass through (got: " .. vim.inspect(codes(bufnr)) .. ")")
+end, 6000)
+c.expect(shown, "the toggle ALONE must reveal unmanaged rows (got: " .. vim.inspect(codes(bufnr)) .. ")")
+c.expect(c.any_notice("refreshed"), "the toggle should report the buffers it refreshed")
+
+-- and toggling back must hide them again, also without help
+vim.cmd("LociToggleUnmanaged")
+local hidden = c.wait_for(function()
+  return not vim.tbl_contains(codes(bufnr), "unmanaged")
+end, 6000)
+c.expect(hidden, "toggling back must re-filter (got: " .. vim.inspect(codes(bufnr)) .. ")")
+c.expect(vim.tbl_contains(codes(bufnr), "missing_target"), "real diagnostics must survive both toggles")
 c.finish()

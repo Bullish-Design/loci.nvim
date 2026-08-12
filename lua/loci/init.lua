@@ -336,7 +336,13 @@ local function apply_effect(wire, params, ref, after)
       local target = (type(ref) == "number" and ref ~= 0 and vim.api.nvim_buf_is_valid(ref))
           and ref
         or vim.api.nvim_get_current_buf()
-      if vim.api.nvim_buf_is_valid(target) then
+      -- Skip the reload when the effect DELETED the buffer's file (a move renames the source
+      -- out from under it). `:checktime` on a buffer whose file is gone raises
+      -- `E211: File no longer available` — noise on an operation that actually succeeded.
+      local gone = vim.api.nvim_buf_is_valid(target)
+        and vim.api.nvim_buf_get_name(target) ~= ""
+        and vim.fn.filereadable(vim.api.nvim_buf_get_name(target)) == 0
+      if vim.api.nvim_buf_is_valid(target) and not gone then
         local was_modified = vim.bo[target].modified
         vim.cmd.checktime(tostring(target))
         if was_modified and vim.bo[target].modified then
@@ -920,7 +926,18 @@ function M.move_document()
     preview_then_apply("documents/move", { source = rel, destination = dest },
       function() return ("Move %s → %s?"):format(rel, dest) end,
       bufnr, function(value)
+        local moved = present(value) and present(value.document) and present(value.document.path)
         open_new_document(value, bufnr) -- value.document.path (decision 003 #3)
+        -- The source buffer now points at a path the engine deleted. Left open it is a trap:
+        -- nvim raises `E211: File no longer available` on the next checktime, and a stray `:w`
+        -- would recreate the file the move just removed. Wipe it once the destination is open —
+        -- only on a real move, and never if it somehow holds unsaved changes.
+        if moved and vim.api.nvim_buf_is_valid(bufnr) and not vim.bo[bufnr].modified then
+          local landed = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+          if landed ~= vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":p") then
+            pcall(vim.api.nvim_buf_delete, bufnr, { force = false })
+          end
+        end
       end)
   end)
 end
@@ -1151,29 +1168,54 @@ local function filter_loci_unmanaged(items)
   return out
 end
 
+-- The filter runs when diagnostics ARRIVE, so flipping the flag alone changes nothing already on
+-- screen: nvim re-pulls only on edit/reopen, and the informational rows a user just asked to see
+-- would not appear until they touched the buffer. The command read as broken (verified against a
+-- real vault: 0 rows before the toggle, 0 after). Keep the last UNFILTERED payload per buffer and
+-- re-apply it through the loci namespace on toggle, so the flip takes effect immediately.
+-- Re-PULL rather than re-render: handing the fresh response back through the wrapper below reuses
+-- nvim's own LSP->vim.diagnostic conversion and namespace bookkeeping, instead of reimplementing
+-- (and guessing at) those internals here.
 function M.toggle_unmanaged()
   vim.g.loci_show_unmanaged = not vim.g.loci_show_unmanaged
-  notify("unmanaged diagnostics " .. (vim.g.loci_show_unmanaged and "shown" or "filtered"))
+  local refreshed = 0
+  for _, client in ipairs(vim.lsp.get_clients({ name = LSP_NAME })) do
+    for bufnr in pairs(client.attached_buffers or {}) do
+      if vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_is_loaded(bufnr) then
+        refreshed = refreshed + 1
+        client:request("textDocument/diagnostic", {
+          textDocument = { uri = vim.uri_from_bufnr(bufnr) },
+        }, nil, bufnr) -- nil handler -> the wrapped vim.lsp.handlers entry re-filters and applies
+      end
+    end
+  end
+  notify(
+    "unmanaged diagnostics "
+      .. (vim.g.loci_show_unmanaged and "shown" or "filtered")
+      .. (refreshed > 0 and (" (" .. refreshed .. " buffer" .. (refreshed == 1 and "" or "s") .. " refreshed)") or "")
+  )
+end
+
+local function loci_client(ctx)
+  if not (ctx and ctx.client_id) then
+    return nil
+  end
+  local client = vim.lsp.get_client_by_id(ctx.client_id)
+  return (client and client.name == LSP_NAME) and client or nil
 end
 
 local on_pull_diag = vim.lsp.handlers["textDocument/diagnostic"]
 vim.lsp.handlers["textDocument/diagnostic"] = function(err, result, ctx, config)
-  if not err and result and result.items and ctx and ctx.client_id then
-    local client = vim.lsp.get_client_by_id(ctx.client_id)
-    if client and client.name == LSP_NAME then
-      result.items = filter_loci_unmanaged(result.items)
-    end
+  if not err and result and result.items and loci_client(ctx) then
+    result.items = filter_loci_unmanaged(result.items)
   end
   on_pull_diag(err, result, ctx, config)
 end
 
 local on_publish = vim.lsp.handlers["textDocument/publishDiagnostics"]
 vim.lsp.handlers["textDocument/publishDiagnostics"] = function(err, result, ctx, config)
-  if not err and result and result.diagnostics and ctx and ctx.client_id then
-    local client = vim.lsp.get_client_by_id(ctx.client_id)
-    if client and client.name == LSP_NAME then
-      result.diagnostics = filter_loci_unmanaged(result.diagnostics)
-    end
+  if not err and result and result.diagnostics and loci_client(ctx) then
+    result.diagnostics = filter_loci_unmanaged(result.diagnostics)
   end
   on_publish(err, result, ctx, config)
 end
