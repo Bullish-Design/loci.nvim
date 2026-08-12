@@ -1,0 +1,83 @@
+{
+  "_comment": [
+    "ENGINE CONTRACT — captured from the real loci engine, not hand-authored.",
+    "Regenerate with: ./capture-fixtures.sh <vault> --write-contract",
+    "",
+    "fs_v2.py validates its DEFAULTS against this file at startup and refuses to",
+    "run on drift. This is what enforces the 004 R6 rule (a fixture must share the",
+    "engine's shape, width, and vocabulary) by CONSTRUCTION rather than by",
+    "discipline -- the original statusline bug shipped because the rule was only a",
+    "convention and nothing checked it.",
+    "",
+    "It records the engine's CONTRACT (key sets, row arities, enums, widths), not",
+    "captured rows: the suite asserts on known fixture paths like 'notes/a.md', so",
+    "pasting real vault data wholesale would break every test while proving less."
+  ],
+  "revision_length": 64,
+  "id_pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+  "enums": {
+    "identity_state": ["none", "managed", "degraded"],
+    "kind": [null, "daily", "task", "project"],
+    "status": [null, "active", "waiting", "duplicated"],
+    "state": ["managed", "unmanaged"]
+  },
+  "document_keys": ["path", "id", "kind", "title", "status", "state", "identity_state"],
+  "workspace_view_keys": ["id", "name", "path", "project", "archived", "documents", "files"],
+  "wires": {
+    "loci/workspaces/list": {
+      "keys": ["workspaces"],
+      "rows_of": { "workspaces": "workspace_view" }
+    },
+    "loci/workspaces/get": {
+      "keys": ["view"],
+      "object_of": { "view": "workspace_view" }
+    },
+    "loci/workspaces/put": {
+      "keys": ["workspace_id", "path", "commits", "adopted_members", "revision"]
+    },
+    "loci/workspaces/archive": {
+      "keys": ["view", "commit", "revision"],
+      "object_of": { "view": "workspace_view" }
+    },
+    "loci/documents/list": {
+      "keys": ["documents"],
+      "rows_of": { "documents": "document" }
+    },
+    "loci/documents/get": {
+      "keys": ["document"],
+      "object_of": { "document": "document" }
+    },
+    "loci/documents/create": {
+      "keys": ["document", "commit", "revision"],
+      "object_of": { "document": "document" }
+    },
+    "loci/documents/adopt": {
+      "keys": ["document", "commit", "revision"],
+      "object_of": { "document": "document" }
+    },
+    "loci/documents/move": {
+      "keys": ["document", "commit", "revision"],
+      "object_of": { "document": "document" }
+    },
+    "loci/maintenance/refresh": {
+      "keys": ["revision", "consistency", "changed_sources", "diagnostics_summary"],
+      "row_arity": { "diagnostics_summary": 2 }
+    },
+    "loci/search/text": {
+      "keys": ["results"],
+      "row_arity": { "results": 6 }
+    },
+    "loci/graph/backlinks": { "keys": ["rows"], "row_arity": { "rows": 3 } },
+    "loci/graph/broken_links": { "keys": ["rows"], "row_arity": { "rows": 3 } },
+    "loci/graph/missing_attachments": { "keys": ["rows"], "row_arity": { "rows": 2 } },
+    "loci/graph/project_members": { "keys": ["rows"], "row_arity": { "rows": 3 } },
+    "loci/graph/traversal": { "keys": ["rows"], "row_arity": { "rows": 2 } },
+    "loci/graph/ambiguous_links": { "keys": ["rows"] },
+    "loci/graph/neighbors": { "keys": ["rows"], "row_scalar": ["rows"] },
+    "loci/graph/orphans": { "keys": ["rows"], "row_scalar": ["rows"] },
+    "loci/workspaces/archive/preview": { "keys": ["command", "refusals", "changes"] },
+    "loci/workspaces/put/preview": { "keys": ["command", "refusals", "changes"] },
+    "loci/documents/adopt/preview": { "keys": ["command", "refusals", "changes"] },
+    "loci/documents/move/preview": { "keys": ["command", "refusals", "changes"] }
+  }
+}

@@ -1134,13 +1134,26 @@ end
 
 -- `didSave` is a notification with no response, so the host reports the CAS result back as the
 -- `loci/saveResult` notification (D-041). Surface real conflicts; "unchanged" saves are silent.
+-- The notification carries the `uri` of the document that was saved, so the warning NAMES the file
+-- rather than leaving the user to guess which buffer conflicted — this matters precisely when it
+-- fires, since a background/autosave conflict often reaches you while you are looking at a
+-- different buffer. Falls back to the bare message when the host sends no uri (004 F-03: the
+-- fakeserver used to omit it, so per-buffer attribution was untestable and therefore never built).
 vim.lsp.handlers["loci/saveResult"] = function(err, result)
   if not result then
     return
   end
   if result.committed == false and result.reason ~= "unchanged" then
+    local where = ""
+    if present(result.uri) then
+      local path = vim.uri_to_fname(result.uri)
+      -- prefer the vault-relative path; fall back to the tail for a non-vault/unknown root
+      local root = root_dir(vim.uri_to_bufnr(result.uri))
+      local rel = root and path:sub(1, #root) == root and path:sub(#root + 2) or vim.fn.fnamemodify(path, ":t")
+      where = " (" .. rel .. ")"
+    end
     notify(
-      "save not committed: " .. tostring(result.reason or "conflict with an external edit"),
+      "save not committed" .. where .. ": " .. tostring(result.reason or "conflict with an external edit"),
       vim.log.levels.WARN
     )
   end

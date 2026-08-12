@@ -9,7 +9,14 @@
 # wire so a drift is visible in a diff.
 #
 # Usage:
-#   ./capture-fixtures.sh <vault-root> [output-file]
+#   ./capture-fixtures.sh <vault-root> [output-file]     # dump envelopes for eyeballing
+#   ./capture-fixtures.sh <vault-root> --write-contract  # regenerate fixtures.json
+#
+# `--write-contract` derives the machine-checkable contract (key sets, row arities,
+# enum vocabularies, revision width) from what the engine actually returned and
+# rewrites fixtures.json, which fs_v2.py validates its DEFAULTS against at startup.
+# Run it after an engine change: a drift then fails every scenario immediately
+# instead of silently licensing a fixture that lies.
 #
 # Requires the real `loci` CLI on PATH (nix: `nix shell .#loci`). The CLI and the
 # LSP host share LociHost, so the CLI envelope IS the wire envelope.
@@ -17,6 +24,7 @@ set -euo pipefail
 
 VAULT="${1:-}"
 OUT="${2:-/dev/stdout}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -z "$VAULT" ] || [ ! -f "$VAULT/.loci/vault.toml" ]; then
   echo "usage: $0 <vault-root> [output-file]   (vault must have .loci/vault.toml)" >&2
@@ -42,6 +50,68 @@ wires=(
   "graph/ambiguous_links|"
   "maintenance/refresh|"
 )
+
+if [ "$OUT" = "--write-contract" ]; then
+  raw="$(mktemp)"
+  trap 'rm -f "$raw"' EXIT
+  for entry in "${wires[@]}"; do
+    IFS='|' read -r wire args <<<"$entry"
+    if [ -n "$args" ]; then
+      printf '%s\t%s\n' "$wire" "$(loci --vault "$VAULT" --json "$wire" "$args")" >>"$raw"
+    else
+      printf '%s\t%s\n' "$wire" "$(loci --vault "$VAULT" --json "$wire")" >>"$raw"
+    fi
+  done
+  CONTRACT="$HERE/fixtures.json" python3 - "$raw" <<'PY'
+import json, os, sys
+
+# Merge observed structure into the existing contract: the engine is authoritative
+# for shapes/widths/vocabularies, but the prose _comment and any wire the capture
+# did not exercise are preserved rather than silently dropped.
+path = os.environ["CONTRACT"]
+with open(path) as fh:
+    contract = json.load(fh)
+
+enums = {k: list(v) for k, v in contract["enums"].items()}
+wires = dict(contract["wires"])
+
+for line in open(sys.argv[1]):
+    wire, _, payload = line.partition("\t")
+    env = json.loads(payload)
+    if not env.get("ok"):
+        continue
+    value = {k: v for k, v in env["value"].items() if not k.startswith("_")}
+    spec = dict(wires.get("loci/" + wire, {}))
+    spec["keys"] = sorted(value)
+    for key, rows in value.items():
+        if not isinstance(rows, list) or not rows:
+            continue
+        first = rows[0]
+        if isinstance(first, list):
+            spec.setdefault("row_arity", {})[key] = len(first)
+        elif isinstance(first, str):
+            spec.setdefault("row_scalar", [])
+            if key not in spec["row_scalar"]:
+                spec["row_scalar"].append(key)
+        elif isinstance(first, dict):
+            for field in ("identity_state", "kind", "status", "state"):
+                for row in rows:
+                    v = row.get(field)
+                    if field in enums and v not in enums[field]:
+                        enums[field].append(v)
+    if "revision" in value and isinstance(value["revision"], str):
+        contract["revision_length"] = len(value["revision"])
+    wires["loci/" + wire] = spec
+
+contract["enums"] = enums
+contract["wires"] = wires
+with open(path, "w") as fh:
+    json.dump(contract, fh, indent=2)
+    fh.write("\n")
+print(f"contract updated: {path}", file=sys.stderr)
+PY
+  exit 0
+fi
 
 {
   echo "# fs_v2 fixture ground truth"

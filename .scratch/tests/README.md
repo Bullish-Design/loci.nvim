@@ -64,8 +64,17 @@ same bias — fixtures hand-authored to be *readable* rather than *representativ
 * **Content** — real text, with the newlines real text contains. Search snippets are raw document
   bodies; link columns are resolved target names (`"Note 4538"`), never wikilink syntax.
 
-`capture-fixtures.sh` re-captures ground truth from the real engine — run it after an engine
-change rather than hand-editing values back into place.
+**This rule is enforced, not merely stated.** `fixtures.json` holds the engine's contract — key
+sets, row arities, enum vocabularies, the revision width — and `fs_v2.py` validates its `DEFAULTS`
+against it at startup, exiting non-zero with a diff-style report on any drift. Since every scenario
+spawns the fake, a violation fails the whole suite at once instead of silently licensing a lying
+fixture. Verified to catch: a revived `identity_state: "ok"`, a 2-char revision (the original bug),
+a non-UUID id, and a dropped `workspaces/list` field.
+
+`capture-fixtures.sh <vault>` dumps real envelopes for eyeballing;
+`capture-fixtures.sh <vault> --write-contract` regenerates `fixtures.json` from what the engine
+actually returned. Run the latter after an engine change rather than hand-editing values back into
+place — hand-editing is how the fixtures drifted in the first place.
 
 Two override keys exist so the fake can misbehave on purpose (a fake that always succeeds cannot
 test failure): `"__drop__": [method, ...]` never answers those methods, and an override carrying

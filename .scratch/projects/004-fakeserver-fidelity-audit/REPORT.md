@@ -274,6 +274,40 @@ own merits, independent of the fake.
 
 ---
 
+## Implementation status — ALL CLOSED (2026-08-12)
+
+| Item | Status |
+|---|---|
+| F-01 revision width | Fixed (`55a5f7e`) — client abbreviates to 7, t25 asserts the width |
+| F-02 invented `identity_state` | Fixed — real enum, and **contract-enforced** |
+| F-03 `saveResult.uri` | Fixed both halves — fake sends it, client now **names the file** in the conflict warning (t13) |
+| F-04 nested `revision` | Fixed — all six are 64-char, contract-enforced |
+| F-05 snippet newlines | Fixed — real multi-line snippet; t28 guards that no picker row contains `\n` |
+| F-06 link bracketing | Fixed — resolved target names |
+| F-07 `workspaces/list` membership | Fixed — contract-enforced key set |
+| F-08 cardinality | Fixed — **t28_scale** drives 50 search rows, 412 broken links, 137 orphans |
+| F-09 doctor hang | Fixed — `on_fail` + deadline; **t27 verified to fail against the old code** |
+| F-10 ids | Fixed — UUIDs, contract-enforced by regex |
+| F-11 kind/status vocabulary | Fixed — real spread, contract-enforced |
+| F-12 `__pycache__` | **WITHDRAWN** — see above; the finding was wrong |
+| F-13 no refusal path | Fixed — envelope overrides + `__drop__`; **t26** covers refused reads and effects |
+
+**R1/R2 landed as a contract validator rather than as captured rows.** The report proposed loading
+captured fixtures directly; that would have broken every test, since the suite asserts on known
+fixture paths (`notes/a.md`) that a real vault does not contain. `fixtures.json` instead records the
+engine's *contract* — key sets, row arities, enums, widths — and `fs_v2` validates `DEFAULTS`
+against it at startup, dying with a diff-style report on drift. This achieves R1's goal (fixtures
+can no longer diverge unnoticed) and subsumes R2 (vocabulary membership is checked, not just
+documented) while keeping the fixtures small and the assertions stable.
+
+Enforcement was verified by deliberately reintroducing four drift classes — including the exact
+`"r1"` revision that caused F-01 — and confirming each is rejected. R6's rule is now enforced by
+construction; the README states it, and `fixtures.json` makes it binding.
+
+Suite: **28 passing** (was 25). `nix flake check` green.
+
+---
+
 ## Appendix — real vs fake, by wire
 
 Captured from the real CLI against `/tmp/loci-drive/vault` (5113 notes), 2026-08-12.

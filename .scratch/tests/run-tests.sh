@@ -172,6 +172,7 @@ tests=(
   "t25_statusline_segment"
   "t26_refusal_envelope"
   "t27_doctor_partial"
+  "t28_scale"
 )
 
 PASS=0

@@ -262,6 +262,97 @@ DEFAULTS = {
 }
 
 
+# ---- contract validation (004 R1/R2) ----------------------------------------
+
+CONTRACT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures.json")
+
+
+def _validate_defaults():
+    """Check DEFAULTS against the engine contract in fixtures.json; die loudly on drift.
+
+    This is the mechanism behind the 004 R6 rule. The rule existed informally before
+    and was violated thirteen times, because nothing enforced it: a fixture could
+    invent a value (`identity_state: "ok"`), shrink one (a 2-char revision), or drop
+    a field (`saveResult.uri`) and every test still passed. Now the fake refuses to
+    start, so drift surfaces as a hard failure in every scenario at once instead of
+    as a bug that reaches a real vault.
+    """
+    import re
+
+    with open(CONTRACT_PATH) as fh:
+        contract = json.load(fh)
+
+    enums = contract["enums"]
+    id_re = re.compile(contract["id_pattern"])
+    rev_len = contract["revision_length"]
+    doc_keys = set(contract["document_keys"])
+    ws_keys = set(contract["workspace_view_keys"])
+    errors = []
+
+    def check_revision(where, value):
+        if isinstance(value, str) and len(value) != rev_len:
+            errors.append(f"{where}: revision is {len(value)} chars, engine sends {rev_len}")
+
+    def check_document(where, doc):
+        if not isinstance(doc, dict):
+            return
+        if set(doc) != doc_keys:
+            errors.append(f"{where}: document keys {sorted(set(doc))} != engine {sorted(doc_keys)}")
+            return
+        if not id_re.match(str(doc["id"])):
+            errors.append(f"{where}: id {doc['id']!r} is not a UUID (engine sends UUIDs)")
+        for field in ("identity_state", "kind", "status", "state"):
+            if doc[field] not in enums[field]:
+                errors.append(
+                    f"{where}: {field}={doc[field]!r} is not in the engine vocabulary {enums[field]}"
+                )
+
+    def check_workspace(where, view):
+        if isinstance(view, dict) and set(view) != ws_keys:
+            errors.append(f"{where}: workspace keys {sorted(set(view))} != engine {sorted(ws_keys)}")
+
+    shape_of = {"document": check_document, "workspace_view": check_workspace}
+
+    for wire, spec in contract["wires"].items():
+        if wire not in DEFAULTS:
+            continue
+        value = DEFAULTS[wire]
+        if set(value) != set(spec["keys"]):
+            errors.append(f"{wire}: keys {sorted(set(value))} != engine {sorted(spec['keys'])}")
+            continue
+        for key, shape in (spec.get("rows_of") or {}).items():
+            for i, row in enumerate(value.get(key) or []):
+                shape_of[shape](f"{wire}.{key}[{i}]", row)
+        for key, shape in (spec.get("object_of") or {}).items():
+            shape_of[shape](f"{wire}.{key}", value.get(key))
+        for key, arity in (spec.get("row_arity") or {}).items():
+            for i, row in enumerate(value.get(key) or []):
+                if not isinstance(row, list) or len(row) != arity:
+                    errors.append(f"{wire}.{key}[{i}]: arity {len(row)} != engine {arity}")
+        for key in spec.get("row_scalar") or []:
+            for i, row in enumerate(value.get(key) or []):
+                if isinstance(row, (list, dict)):
+                    errors.append(f"{wire}.{key}[{i}]: engine sends flat scalars, got {type(row).__name__}")
+        for field in ("revision", "_revision"):
+            if field in value:
+                check_revision(f"{wire}.{field}", value[field])
+
+    check_revision("REVISION", REVISION)
+    check_revision("REVISION_2", REVISION_2)
+
+    if errors:
+        sys.stderr.write(
+            "fs_v2: FIXTURES DRIFTED FROM THE ENGINE CONTRACT (fixtures.json)\n"
+            "  Fixtures must share the engine's shape, width, and vocabulary (004 R6).\n"
+            "  Re-capture with ./capture-fixtures.sh <vault> --write-contract, or fix the fixture.\n\n"
+            + "".join(f"  - {e}\n" for e in errors)
+        )
+        sys.exit(2)
+
+
+_validate_defaults()
+
+
 def feature_value(method, params):
     if method in _overrides:
         return _overrides[method]
