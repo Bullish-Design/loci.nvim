@@ -40,6 +40,14 @@ local function present(v)
   return v ~= nil and v ~= vim.NIL
 end
 
+-- A server-supplied list, safe to `ipairs`. `x or {}` is NOT safe here: JSON null decodes to
+-- `vim.NIL`, a truthy userdata, so `vim.NIL or {}` is `vim.NIL` and `ipairs` then throws. This is
+-- the same hazard that crashed `open_new_document` on a refused effect (004 F-15); these call sites
+-- are latent rather than live only because the engine currently sends `[]` for empty collections.
+local function list(v)
+  return present(v) and v or {}
+end
+
 local function notify(msg, level)
   vim.notify("loci: " .. msg, level or vim.log.levels.INFO)
 end
@@ -304,7 +312,7 @@ local function report_uncommitted(wire, value)
     return false
   end
   local refusals = {}
-  for _, r in ipairs(value.refusals or {}) do
+  for _, r in ipairs(list(value.refusals)) do
     refusals[#refusals + 1] = tostring(r)
   end
   if #refusals > 0 then
@@ -354,7 +362,7 @@ local function summarize_preview(value)
   if not present(value) then
     return lines
   end
-  for _, r in ipairs(value.refusals or {}) do
+  for _, r in ipairs(list(value.refusals)) do
     lines[#lines + 1] = "REFUSED: " .. tostring(r)
   end
   local changes = value.changes or {}
@@ -447,7 +455,7 @@ function M.link_file()
           return
         end
         local files = {}
-        for _, f in ipairs(ws.files or {}) do
+        for _, f in ipairs(list(ws.files)) do
           files[#files + 1] = { path = f[1], role = f[2] }
         end
         for _, f in ipairs(files) do
@@ -458,7 +466,7 @@ function M.link_file()
         end
         files[#files + 1] = { path = rel, role = role }
         local docs = {}
-        for _, d in ipairs(ws.documents or {}) do
+        for _, d in ipairs(list(ws.documents)) do
           docs[#docs + 1] = { ref = d[1], role = d[2] }
         end
         local params = {
@@ -559,7 +567,7 @@ function M.status()
           end,
         }
       end
-      for _, d in ipairs(ws.documents or {}) do
+      for _, d in ipairs(list(ws.documents)) do
         local ref, role, state, cur = d[1], d[2], d[4], d[5]
         rows[#rows + 1] = {
           text = string.format("  note  %s (%s) [%s]", ref or "?", role or "", state or ""),
@@ -568,7 +576,7 @@ function M.status()
           end,
         }
       end
-      for _, f in ipairs(ws.files or {}) do
+      for _, f in ipairs(list(ws.files)) do
         local path, role = f[1], f[2]
         rows[#rows + 1] = {
           text = "  file  " .. tostring(path) .. (role and (" (" .. role .. ")") or ""),
@@ -619,7 +627,7 @@ function M.workspaces()
   M.read("workspaces/list", { include_archived = true }, function(value)
     vim.schedule(function()
       local items = {}
-      for _, w in ipairs((value and value.workspaces) or {}) do
+      for _, w in ipairs(list(value and value.workspaces)) do
         items[#items + 1] = {
           text = (w.name or w.id) .. (w.archived and "  (archived)" or ""),
           workspace_id = w.id,
@@ -656,7 +664,7 @@ function M.projects()
   M.read("documents/list", { state = "managed" }, function(value)
     vim.schedule(function()
       local items = {}
-      for _, d in ipairs((value and value.documents) or {}) do
+      for _, d in ipairs(list(value and value.documents)) do
         if d.kind == "project" then
           items[#items + 1] = {
             text = (d.title or d.path) .. (d.status and (" (" .. d.status .. ")") or ""),
@@ -677,7 +685,7 @@ end
 local function render_health(ref, groups, bufnr)
   vim.schedule(function()
     local rows = {}
-    for _, p in ipairs((ref and ref.diagnostics_summary) or {}) do
+    for _, p in ipairs(list(ref and ref.diagnostics_summary)) do
       rows[#rows + 1] = {
         text = string.format("[%s]  %d", p[1], p[2] or 0),
         action = function() end,
@@ -929,7 +937,7 @@ function M.search()
     M.read("search/text", { query = vim.trim(q), limit = 50 }, function(value)
       vim.schedule(function()
         local items = {}
-        for _, r in ipairs((value and value.results) or {}) do
+        for _, r in ipairs(list(value and value.results)) do
           items[#items + 1] = {
             text = (r[4] and (r[4] .. "  ") or "") .. "[" .. (r[3] or "?") .. "] " .. (r[1] or ""),
             path = r[1],
@@ -962,7 +970,7 @@ function M.backlinks()
   M.read("graph/backlinks", { ref = rel }, function(value)
     vim.schedule(function()
       local items = {}
-      for _, r in ipairs((value and value.rows) or {}) do
+      for _, r in ipairs(list(value and value.rows)) do
         items[#items + 1] = {
           text = string.format("%s  (%s → %s)", r[1], r[2] or "", r[3] or ""),
           path = r[1],
@@ -1002,7 +1010,7 @@ local function graph_picker(wire, prompt_fmt, suffix_fn)
   M.read(wire, { ref = rel }, function(value)
     vim.schedule(function()
       local items = {}
-      for _, r in ipairs((value and value.rows) or {}) do
+      for _, r in ipairs(list(value and value.rows)) do
         local path = (type(r) == "table") and r[1] or r
         items[#items + 1] = {
           text = tostring(path) .. (suffix_fn and suffix_fn(r) or ""),
@@ -1135,7 +1143,7 @@ local function filter_loci_unmanaged(items)
     return items or {}
   end
   local out = {}
-  for _, d in ipairs(items or {}) do
+  for _, d in ipairs(list(items)) do
     if not (d.code == "unmanaged") then
       out[#out + 1] = d
     end
