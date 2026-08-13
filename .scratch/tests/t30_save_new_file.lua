@@ -11,13 +11,18 @@
 --                 it is about to create already exists -> precondition_failed
 --
 -- Verified against the real loci-lsp on a 5113-note vault: every `:w` on a new note
--- answers `{committed: false, reason: "destination_exists"}`, and it repeats on every
--- later `:w` in that session because the refusal path never advances base_hash.
+-- answered `{committed: false, reason: "destination_exists"}`, and it repeated on every
+-- later `:w` in that session because the refusal path never advanced base_hash.
 --
--- The engine fix belongs in loci-core (adopt the bytes on disk when they match the
--- buffer). What this test pins is the CLIENT's decided behaviour: name the file, quote
--- the engine's reason verbatim, and state the consequence — the bytes are on disk, the
--- INDEX is what is behind.
+-- THE ENGINE NOW FIXES THAT (loci-core, did_save's create branch): when the bytes on disk
+-- are the bytes the buffer holds, it adopts them, ingests, advances base_hash and answers
+-- `unchanged` — which this client is silent about, like every other ordinary `:w`.
+--
+-- So the payload below is no longer the everyday case; it is the case that SURVIVES the
+-- engine fix — a file that appeared with content the buffer did not write, which the
+-- engine still refuses. What this test pins is the CLIENT's behaviour for a real refusal:
+-- name the file, quote the engine's reason verbatim, and say the bytes are on disk without
+-- inventing a remedy.
 local c = dofile(vim.env.LOCI_TESTS .. "/common.lua")
 local loci = require("loci")
 c.capture_notify()
@@ -55,9 +60,19 @@ c.expect(
   c.any_notice("destination_exists"),
   "the notice must quote the engine's reason verbatim: " .. vim.inspect(c.notices)
 )
+-- "save not committed" reads as YOUR TEXT WAS LOST. It is not: neovim writes before it
+-- notifies. The notice must say so.
 c.expect(
-  c.any_notice(":LociRefresh"),
-  "the notice must name the remedy — the bytes are on disk, the index is behind: " .. vim.inspect(c.notices)
+  c.any_notice("on disk"),
+  "the notice must say the bytes are safe: " .. vim.inspect(c.notices)
+)
+-- ...and it must NOT prescribe a refresh. Measured against the real engine: the LSP host
+-- opens at ConsistencyMode.CURRENT and every current read runs a refresh pass, so the file
+-- is already visible to search and the graph. 005 shipped ":LociRefresh to re-scan" here on
+-- an untested assumption; only an INDEXED read would have needed it, and the host uses none.
+c.expect(
+  not c.any_notice(":LociRefresh"),
+  "the notice must not prescribe a refresh that does nothing: " .. vim.inspect(c.notices)
 )
 
 -- The engine omits `revision` when a save is refused; the fake must not pad it (005).

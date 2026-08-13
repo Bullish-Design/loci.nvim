@@ -99,6 +99,12 @@ so the next save takes the same branch — hence "forever".
 compiled into the index at save time. It stays invisible to search and to the graph until a
 refresh.
 
+> **Correction (2026-08-13, see the addendum).** The last sentence is wrong. It was never measured.
+> The LSP host opens the vault at `ConsistencyMode.CURRENT` (`apps/lsp/host.py`), and every current
+> read runs a refresh pass, so the note IS visible to search and the graph with no user action.
+> Only an `INDEXED` read stays behind, and the host issues none. The refusal is real; this
+> consequence is not.
+
 **Recommended engine fix** (loci-core, not authored here):
 
 ```python
@@ -521,3 +527,90 @@ table is the half that capture could not see.
 | `loci.action.execute` | `{applied, commit: "source_committed"}` — a **string** | `commit: {status}` | ✅ |
 | `loci.action.execute` unknown | `{applied: false, reason: "unknown action …"}` | n/a | unchanged |
 | `documents/adopt` on a missing file | `ok: false`, `error.kind: "FileNotFoundError"` | n/a | engine note: a raw `OSError` leaks as the error kind rather than a `LociError` subclass |
+
+---
+
+## Addendum — 2026-08-13: the engine items, implemented and measured
+
+005 left four items open against loci-core, on the ground that the engine is not authored here.
+That reasoning held for *writing the patch* and not for *knowing whether the diagnosis was right*.
+Running the client against the local engine checkout closed both.
+
+### A new gate: the client against the engine as WRITTEN
+
+`nix flake check` pins loci-core to a pushed rev, so it only ever proves the client against the
+engine as *published*. Engine work sits in the sibling checkout for days first.
+**`scripts/check-local-engine.sh`** points the input at `../loci-core` (uncommitted work included)
+and runs three gates: the engine's pytest suite, the client suite, and a **wire-contract drift
+check** that re-captures the effect contract from the live local `loci-lsp` and diffs it against
+`fixtures.json`.
+
+The third gate is the one a passing suite cannot give. `fs_v2.py` validates itself against those
+same fixtures, so the fake stays self-consistent while the engine moves underneath it — only a
+re-capture sees the ground truth change. Verified both ways: clean today, and it fails when F-10's
+drift (a refused save padded with `revision`) is planted. Without `--vault` it re-derives the
+effect half only; the script says so rather than implying coverage it does not have.
+
+### F-01 — the diagnosis was right, the stated consequence was not
+
+Reproduced against the local engine, driving the adapter in neovim's order. Both saves refused,
+exactly as reported. Then the part 005 asserted without measuring — with the index built *first*,
+then the new note:
+
+| consistency | hits for the new note |
+|---|---|
+| `indexed` | **0** |
+| `current`, `verified`, `overlay` | 1 |
+
+The host uses `CURRENT` (`apps/lsp/host.py`). So the note was findable all along, and "it stays
+invisible to search and to the graph until a refresh" was true only for a mode the host never
+issues. The user-facing damage was the notice itself — a scary warning on every `:w` of a new note
+— plus a client hint that prescribed a `:LociRefresh` which does nothing.
+
+**Why the engine's own suite never saw it.** `test_repeated_saves_of_a_created_buffer_all_commit`
+lets the *server* write the file. Neovim writes first. That one missing line is the whole bug: the
+engine's coverage encoded a host model neovim does not use, so the suite stayed green while every
+new note refused.
+
+**Fixed** in `did_save`'s create branch: adopt the bytes on disk when they are the bytes we were
+going to write, ingest, advance `_base_hash`, and answer `unchanged` — not `committed`. `unchanged`
+is what the sibling branch already answers for "disk equals buffer", and what every *later* `:w` on
+that file answers; a create that reported `committed` would make a note's first save differ from all
+its later ones for no observable reason. The client is silent on `unchanged`, so the everyday flow
+is now silent, which is what it should always have been.
+
+Pinned by two engine tests: the neovim-order save (verified to fail without the fix) and a guard
+that a file which appeared with *different* content still refuses.
+
+### F-04 — implemented
+
+`AnsweringProtocol` wraps `structure_message`. A request whose params fail `lsprotocol` structuring
+now gets a JSON-RPC `-32602`, then the read loop drops the message as before. The hook works
+because `structure_message` acts only on the top-level message, so the `id` is still in hand.
+Notifications get nothing, per spec. Two raw-wire tests: the error arrives, and the session keeps
+answering afterwards. The first is verified to fail without the fix — and it can observe silence
+rather than inherit it, because a regression must fail the suite, not hang it.
+
+### The appendix note — implemented
+
+`documents/adopt` on a missing path answered `error.kind: "FileNotFoundError"`, a Python builtin no
+client can be written against. `_read_source` — the choke point every adopt/format/preview path
+reads through — now raises `UnresolvedReferenceError` for a missing file and `InvalidSourceError`
+for an unreadable one.
+
+### The client's hint, corrected
+
+`SAVE_HINT` lost the half that was false and kept the half that matters:
+
+```
+save not committed (fresh.md): destination_exists — your text is on disk; the engine did not commit it
+```
+
+"save not committed" reads as *your text was lost*. It never is: neovim writes before it notifies.
+That reassurance is what the hint is for. `:LociRefresh` stays a command; it is no longer offered as
+a remedy for something that needs none. t30 now asserts the notice does **not** prescribe it.
+
+### What this leaves
+
+R5 (Snacks visuals in nix-nvim) and R6 (the release) are unchanged and still open. R6 now gates
+more than it did: the engine fixes above are invisible to the fleet until both repos ship.

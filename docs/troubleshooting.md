@@ -45,6 +45,15 @@ editor, the engine itself) between open and save produces `committed: false` —
 instead of silently overwriting. Reload the file (`:e`) and re-apply your edit. An unchanged save
 is silent by design.
 
+Your text is never at risk here: neovim writes the file and only then tells the server, so the
+bytes are on disk whatever the server answers. The notice is about the **commit**, not the write.
+
+**`destination_exists` on a brand-new note** used to fire on every `:w` of a file created during
+the session, forever. That was an engine bug (the exclusive create found the file neovim had just
+written) and it is fixed: the engine now adopts those bytes, indexes them, and answers `unchanged`,
+which is silent. If you still see `destination_exists`, the file on disk is **not** what your
+buffer holds — treat it as the conflict above.
+
 ## "…refused: unsupported_new_value" (set_status)
 
 `documents.set_status` refuses values that would not reparse equal (D-027) — e.g. `yes`, `no`,

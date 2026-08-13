@@ -1336,11 +1336,19 @@ end
 -- The reasons the engine actually emits (005, captured from a live loci-lsp — see
 -- .scratch/tests/fakeservers/capture-effects.py): `ok`, `unchanged`, `not_open`,
 -- `source_hash_mismatch`, `destination_exists`, plus `unreadable:<errno>`. Only `unchanged` is
--- routine; the rest all share ONE consequence, which is what the hint states: neovim has written
--- the bytes (it writes before it notifies), but the ENGINE did not commit or ingest them, so the
--- index is behind for that file until a refresh. Naming the remedy is presentation, not policy —
--- the reason itself stays the engine's word, verbatim.
-local SAVE_HINT = " — the file is on disk but the index did not take it; :LociRefresh to re-scan"
+-- routine, and it is now what an ordinary new-note `:w` answers too: the engine adopts the bytes
+-- neovim already wrote (loci-core, did_save's create branch). A refusal that reaches this handler
+-- is therefore a real one.
+--
+-- The hint states the one thing every refusal shares, because "save not committed" reads as YOUR
+-- TEXT WAS LOST: neovim writes before it notifies, so the bytes are on disk either way. It no
+-- longer promises anything about the index. The old wording ended ":LociRefresh to re-scan", which
+-- was MEASURED FALSE against the real engine: the LSP host opens the vault with
+-- ConsistencyMode.CURRENT (loci-core apps/lsp/host.py), and every current read runs a refresh pass,
+-- so the file is visible to search and the graph with no user action at all. Only INDEXED reads
+-- would have needed the refresh, and the host does not use them. Prescribing a step that does
+-- nothing teaches the user their tools lie to them.
+local SAVE_HINT = " — your text is on disk; the engine did not commit it"
 
 vim.lsp.handlers["loci/saveResult"] = function(err, result)
   if not result then
