@@ -520,6 +520,24 @@ function M.statusline()
   return tostring(st.revision):sub(1, REV_WIDTH) .. (st.consistency ~= "current" and "!" or "")
 end
 
+-- The current buffer's VAULT-RELATIVE path — the `ref` every per-document verb sends.
+-- Returns nil after notifying, so a caller is `local rel = current_ref(bufnr); if not rel then return end`.
+-- This computation was copy-pasted into six verbs; one copy means one place to be wrong.
+local function current_ref(bufnr)
+  local root = root_dir(bufnr)
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if not root or name == "" then
+    notify("open a file inside a loci vault", vim.log.levels.WARN)
+    return nil
+  end
+  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
+  if rel == "" then
+    notify("not a vault file", vim.log.levels.WARN)
+    return nil
+  end
+  return rel
+end
+
 -- Resolve a workspace manifest `project` ref (id or path) and open its document.
 local function resolve_and_open(ref, bufnr)
   if not ref then
@@ -878,20 +896,124 @@ end
 -- apply path reloads via `:checktime` (the engine is the sole writer).
 function M.adopt()
   local bufnr = vim.api.nvim_get_current_buf()
-  local root = root_dir(bufnr)
-  local name = vim.api.nvim_buf_get_name(bufnr)
-  if not root or name == "" then
-    notify("open a file inside a loci vault", vim.log.levels.WARN)
-    return
-  end
-  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
-  if rel == "" then
-    notify("not a vault file", vim.log.levels.WARN)
+  local rel = current_ref(bufnr)
+  if not rel then
     return
   end
   preview_then_apply("documents/adopt", { path = rel }, function()
     return "Adopt " .. rel .. "?"
   end, bufnr)
+end
+
+-- Rewrite the current document's owned `loci:` region canonically
+-- (`documents/format_owned`, FormatOwnedRequest `{ref}`). The engine already offers
+-- this as a code action, but only while `noncanonical_loci_metadata` is on the
+-- document AND only through the code-action menu; `:LociAdopt` sets the precedent
+-- that a code action's verb also gets a direct surface. A no-op answers
+-- `formatted: false` and commits nothing, which the refusal reporting already says.
+function M.format_owned()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local rel = current_ref(bufnr)
+  if not rel then
+    return
+  end
+  preview_then_apply("documents/format_owned", { ref = rel }, function()
+    return "Format the owned loci region of " .. rel .. "?"
+  end, bufnr)
+end
+
+-- Set the shared `status` property (`documents/set_status`, SetStatusRequest
+-- `{ref, status}` — D-027, the ONE shared-property writer).
+--
+-- The vocabulary is the VAULT'S, not this client's: the schema policy decides what
+-- is legal, and the engine refuses anything that would not reparse equal
+-- (`set_status refused: unsupported_new_value`). So the picker offers the statuses
+-- the vault is ALREADY using — read from `documents/list`, never hardcoded — plus a
+-- free-text escape for a value not in use yet. Hardcoding a list here would be
+-- exactly the client-side semantics this plugin does not hold.
+function M.set_status()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local rel = current_ref(bufnr)
+  if not rel then
+    return
+  end
+  local function apply(status)
+    preview_then_apply("documents/set_status", { ref = rel, status = status }, function()
+      return ("Set status of %s to %s?"):format(rel, status)
+    end, bufnr)
+  end
+  M.read("documents/list", { state = "managed" }, function(value)
+    vim.schedule(function()
+      local seen, items = {}, {}
+      for _, d in ipairs(list(value and value.documents)) do
+        if present(d.status) and not seen[d.status] then
+          seen[d.status] = true
+          items[#items + 1] = { text = d.status, status = d.status }
+        end
+      end
+      table.sort(items, function(a, b) return a.text < b.text end)
+      items[#items + 1] = { text = "＋ other…" }
+      pick(items, "Status for " .. rel, function(item)
+        if item.status then
+          apply(item.status)
+        else
+          vim.ui.input({ prompt = "Status: " }, function(s)
+            if s and vim.trim(s) ~= "" then
+              apply(vim.trim(s))
+            end
+          end)
+        end
+      end)
+    end)
+  end, bufnr)
+end
+
+-- Project membership for the current document (`relations/add_project` /
+-- `relations/remove_project`, both `{document, project}`).
+--
+-- This was the one capability with NO editor surface at all: a project is just a
+-- document whose policy-mapped kind is `project` (arch §11.2), membership lives in
+-- the member's owned `loci:` region, and nothing here could write it. Adding a member
+-- adopts it first when unmanaged — the engine does that, and its preview shows BOTH
+-- patches, which `summarize_preview` already renders.
+--
+-- Both directions pick from the same source (`documents/list` filtered to
+-- `kind == "project"`, the `M.projects()` data source). Removal cannot offer only the
+-- document's CURRENT projects — `documents/get` returns a DocumentView with no
+-- membership field — so it offers every project and lets the engine refuse
+-- "membership unchanged (not a member)".
+local function project_membership(wire, verb)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local rel = current_ref(bufnr)
+  if not rel then
+    return
+  end
+  M.read("documents/list", { state = "managed" }, function(value)
+    vim.schedule(function()
+      local items = {}
+      for _, d in ipairs(list(value and value.documents)) do
+        if d.kind == "project" then
+          items[#items + 1] = { text = (d.title or d.path), ref = d.path }
+        end
+      end
+      pick(items, verb .. " " .. rel .. " — pick a project", function(item)
+        if not item.ref then
+          return
+        end
+        preview_then_apply(wire, { document = rel, project = item.ref }, function()
+          return ("%s %s %s %s?"):format(verb, rel, wire == "relations/add_project" and "to" or "from", item.ref)
+        end, bufnr)
+      end)
+    end)
+  end, bufnr)
+end
+
+function M.add_project()
+  project_membership("relations/add_project", "Add")
+end
+
+function M.remove_project()
+  project_membership("relations/remove_project", "Remove")
 end
 
 -- Move the current buffer's document (`documents/move`, preview route D-032).
@@ -903,15 +1025,8 @@ end
 -- moved file.
 function M.move_document()
   local bufnr = vim.api.nvim_get_current_buf()
-  local root = root_dir(bufnr)
-  local name = vim.api.nvim_buf_get_name(bufnr)
-  if not root or name == "" then
-    notify("open a file inside a loci vault", vim.log.levels.WARN)
-    return
-  end
-  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
-  if rel == "" then
-    notify("not a vault file", vim.log.levels.WARN)
+  local rel = current_ref(bufnr)
+  if not rel then
     return
   end
   vim.ui.input({ prompt = "Move to (vault-relative path): " }, function(dest)
@@ -973,15 +1088,8 @@ end
 -- Backlinks for the current note (`graph/backlinks`, ref = vault-relative path of the buffer).
 function M.backlinks()
   local bufnr = vim.api.nvim_get_current_buf()
-  local root = root_dir(bufnr)
-  local name = vim.api.nvim_buf_get_name(bufnr)
-  if not root or name == "" then
-    notify("open a file inside a loci vault", vim.log.levels.WARN)
-    return
-  end
-  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
-  if rel == "" then
-    notify("not a vault file", vim.log.levels.WARN)
+  local rel = current_ref(bufnr)
+  if not rel then
     return
   end
   M.read("graph/backlinks", { ref = rel }, function(value)
@@ -1013,15 +1121,8 @@ end
 -- First column is always the path; selecting a row opens it at its real vault path.
 local function graph_picker(wire, prompt_fmt, suffix_fn)
   local bufnr = vim.api.nvim_get_current_buf()
-  local root = root_dir(bufnr)
-  local name = vim.api.nvim_buf_get_name(bufnr)
-  if not root or name == "" then
-    notify("open a file inside a loci vault", vim.log.levels.WARN)
-    return
-  end
-  local rel = name:gsub("^" .. vim.pesc(root), ""):gsub("^/+", "")
-  if rel == "" then
-    notify("not a vault file", vim.log.levels.WARN)
+  local rel = current_ref(bufnr)
+  if not rel then
     return
   end
   M.read(wire, { ref = rel }, function(value)
@@ -1075,6 +1176,10 @@ local PALETTE_ITEMS = {
   { text = "Scratch note", action = function() M.scratch() end },
   { text = "Adopt current note", action = function() M.adopt() end },
   { text = "Move current note", action = function() M.move_document() end },
+  { text = "Format owned loci metadata", action = function() M.format_owned() end },
+  { text = "Set status", action = function() M.set_status() end },
+  { text = "Add to project", action = function() M.add_project() end },
+  { text = "Remove from project", action = function() M.remove_project() end },
   { text = "Projects", action = function() M.projects() end },
   { text = "Workspaces", action = function() M.workspaces() end },
   { text = "Status / workspace context", action = function() M.status() end },
@@ -1227,6 +1332,16 @@ end
 -- fires, since a background/autosave conflict often reaches you while you are looking at a
 -- different buffer. Falls back to the bare message when the host sends no uri (004 F-03: the
 -- fakeserver used to omit it, so per-buffer attribution was untestable and therefore never built).
+--
+-- The reasons the engine actually emits (005, captured from a live loci-lsp — see
+-- .scratch/tests/fakeservers/capture-effects.py): `ok`, `unchanged`, `not_open`,
+-- `source_hash_mismatch`, `destination_exists`, plus `unreadable:<errno>`. Only `unchanged` is
+-- routine; the rest all share ONE consequence, which is what the hint states: neovim has written
+-- the bytes (it writes before it notifies), but the ENGINE did not commit or ingest them, so the
+-- index is behind for that file until a refresh. Naming the remedy is presentation, not policy —
+-- the reason itself stays the engine's word, verbatim.
+local SAVE_HINT = " — the file is on disk but the index did not take it; :LociRefresh to re-scan"
+
 vim.lsp.handlers["loci/saveResult"] = function(err, result)
   if not result then
     return
@@ -1241,7 +1356,8 @@ vim.lsp.handlers["loci/saveResult"] = function(err, result)
       where = " (" .. rel .. ")"
     end
     notify(
-      "save not committed" .. where .. ": " .. tostring(result.reason or "conflict with an external edit"),
+      "save not committed" .. where .. ": " .. tostring(result.reason or "conflict with an external edit")
+        .. SAVE_HINT,
       vim.log.levels.WARN
     )
   end
@@ -1254,6 +1370,12 @@ vim.api.nvim_create_user_command("LociStatus", M.status, { desc = "Loci status /
 vim.api.nvim_create_user_command("LociWorkspaces", M.workspaces, { desc = "Loci workspaces (pin a workspace)" })
 vim.api.nvim_create_user_command("LociProjects", M.projects, { desc = "Loci projects" })
 vim.api.nvim_create_user_command("LociDoctor", M.doctor, { desc = "Loci vault health (refresh + graph findings)" })
+-- `maintenance/refresh` was reachable only through the palette and the status hub, yet it is the
+-- remedy the save-refusal notice names: a refused save leaves the bytes on disk and the index
+-- behind, and this is what catches the index up (005).
+vim.api.nvim_create_user_command("LociRefresh", function()
+  M.refresh(vim.api.nvim_get_current_buf())
+end, { desc = "Loci refresh the index" })
 vim.api.nvim_create_user_command("LociDaily", M.daily, { desc = "Loci daily note" })
 vim.api.nvim_create_user_command("LociScratch", M.scratch, { desc = "Loci scratch note" })
 vim.api.nvim_create_user_command("LociNote", M.new_note, { desc = "Loci new note" })
@@ -1266,5 +1388,9 @@ vim.api.nvim_create_user_command("LociLinkFile", M.link_file, { desc = "Loci lin
 vim.api.nvim_create_user_command("LociToggleUnmanaged", M.toggle_unmanaged, { desc = "Loci toggle unmanaged diagnostic rows" })
 vim.api.nvim_create_user_command("LociAdopt", M.adopt, { desc = "Loci adopt the current buffer's document" })
 vim.api.nvim_create_user_command("LociMove", M.move_document, { desc = "Loci move the current buffer's document" })
+vim.api.nvim_create_user_command("LociFormat", M.format_owned, { desc = "Loci format the owned loci metadata region" })
+vim.api.nvim_create_user_command("LociSetStatus", M.set_status, { desc = "Loci set the document's status property" })
+vim.api.nvim_create_user_command("LociAddProject", M.add_project, { desc = "Loci add the current document to a project" })
+vim.api.nvim_create_user_command("LociRemoveProject", M.remove_project, { desc = "Loci remove the current document from a project" })
 
 return M

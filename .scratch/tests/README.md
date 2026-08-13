@@ -71,10 +71,39 @@ spawns the fake, a violation fails the whole suite at once instead of silently l
 fixture. Verified to catch: a revived `identity_state: "ok"`, a 2-char revision (the original bug),
 a non-UUID id, and a dropped `workspaces/list` field.
 
-`capture-fixtures.sh <vault>` dumps real envelopes for eyeballing;
-`capture-fixtures.sh <vault> --write-contract` regenerates `fixtures.json` from what the engine
-actually returned. Run the latter after an engine change rather than hand-editing values back into
+### Capturing ground truth — two routes, because there are two kinds of wire
+
+| Capture | Route | Covers |
+|---|---|---|
+| `capture-fixtures.sh <vault> [--write-contract]` | the `loci` **CLI** | reads: `documents/*`, `workspaces/*`, `search/*`, `graph/*`, `maintenance/refresh` |
+| `capture-effects.py [--vault <root>] [--write-contract]` | raw JSON-RPC to a live **`loci-lsp`** | effects: every mutating wire + its preview, all five `loci/saveResult` outcomes, `textDocument/codeAction`, `loci.action.execute` |
+
+For a READ the CLI envelope **is** the wire envelope, so the CLI is honest ground truth. For an
+EFFECT it is not: `loci --json documents/create` returns a `CommandPreview`
+(`{command, changes, refusals, _committed: false}`) and does not commit at all, while the LSP host
+commits and sends the `SourceCommit` (`{document, commit: {...}, revision}`). Project 004 captured
+effects from the CLI and validated the fake against a shape the client never sees; two live bugs
+(F-14, F-15) and one invented enum value (F-16) came out of that single blind spot. **Never write an
+effect fixture from the CLI.**
+
+`capture-effects.py` builds a throwaway vault, drives every effect over the wire, and prints the
+envelopes; `--write-contract` merges the observed key sets, the `SourceCommit` field set, the
+`saveResult` required/optional split and its `reason` vocabulary, and the code-action shapes into
+`fixtures.json`. Run either capture after an engine change rather than hand-editing values back into
 place — hand-editing is how the fixtures drifted in the first place.
+
+**Barriers matter when capturing.** LSP notifications are queued, so a bare `didOpen` has NOT been
+processed when the call returns. Writing a file straight after sending `didOpen` lets the server
+read the *new* bytes as its CAS base, and every conflict probe comes back `committed` — the capture
+races itself and reports the happy path. `capture-effects.py::Server.sync()` issues a request as a
+barrier between notification and file write for exactly this reason.
+
+**A probe is not evidence until it can tell "no reply" from "empty reply".** The `codeAction
+returned 0` finding that opened project 005 was a probe artifact: the drive passed
+`vim.diagnostic.get(0)` — `vim.Diagnostic` rows, which carry `lnum`/`col` and no `range` — as
+`context.diagnostics`. pygls raises `JsonRpcInvalidParams` while *structuring* the message, before
+dispatch, so the server never answers at all, and the probe recorded the missing reply as `0
+actions`. Always record whether the reply arrived, separately from what it contained.
 
 Two override keys exist so the fake can misbehave on purpose (a fake that always succeeds cannot
 test failure): `"__drop__": [method, ...]` never answers those methods, and an override carrying
@@ -114,6 +143,18 @@ the real pygls host answers `loci/documents/create`, the file lands on disk with
 | server-death hygiene through real attach (shim) | t15 |
 | workspaces/put create + pin (preview-first) | t16 |
 | **REAL engine**: init → attach → create → open → refusal (V2) | t17 |
+| link-a-file read-modify-write into `workspaces/put` | t18 |
+| graph pickers: neighbors / traversal / project members | t19, t20 |
+| document move + adopt (preview-then-apply) | t21, t22 |
+| palette mirrors the registry surface | t23 |
+| `unmanaged` escape hatch refreshes attached buffers | t24 |
+| statusline segment width + staleness marker | t25 |
+| refused envelope (`ok: false`) on reads and effects | t26 |
+| doctor settles on a failing / unanswered leg | t27 |
+| picker + health rendering at real cardinality | t28 |
+| refused effect (`commit.status`) is reported | t29 |
+| refused save on `:w` of a new file names file, reason, remedy | t30 |
+| diagnostics: PULL route, severity map, range map | t31 |
 
 The old t09–t21 (palette args, activation, deactivation, editor_state, git writeback, doctor,
 real-server fullstack) are **deleted** — they encoded engine capabilities V2 removed (arch §18).

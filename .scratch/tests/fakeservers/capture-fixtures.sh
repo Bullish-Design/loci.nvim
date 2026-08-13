@@ -112,7 +112,7 @@ for line in open(sys.argv[1]):
 contract["enums"] = enums
 contract["wires"] = wires
 with open(path, "w") as fh:
-    json.dump(contract, fh, indent=2)
+    json.dump(contract, fh, indent=2, ensure_ascii=False)
     fh.write("\n")
 print(f"contract updated: {path}", file=sys.stderr)
 PY

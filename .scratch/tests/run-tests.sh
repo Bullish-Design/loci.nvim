@@ -174,6 +174,10 @@ tests=(
   "t27_doctor_partial"
   "t28_scale"
   "t29_refused_effect"
+  "t30_save_new_file"
+  "t31_diag_mapping"
+  "t32_tui_interactive"
+  "t33_relations_status"
 )
 
 PASS=0

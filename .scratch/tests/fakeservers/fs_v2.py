@@ -93,6 +93,11 @@ REVISION = "36df3e971186d143265440d83e223052b48d2d17843e4696d8f5d66190c84455"
 # maintenance/refresh reports a *different* revision than the ambient envelope in
 # some flows; keep a second real-width hash so tests can tell them apart.
 REVISION_2 = "bfba77550e4045db186de27411524127c11a197db8640f82fcb2b10bd6daf828"
+# Content hashes are the same width as revisions. `SourceCommit.old_hash/new_hash`
+# and a code action's `expected_hash` are all 64-char hashes on the wire; the code
+# action's used to be the 3-char token "abc" (005).
+HASH_A = "9ceceefd6dbdaadc39af1b3c25d7ab8352b691c535ca2c9e1aa6e333b1cd730e"
+HASH_B = "0d51ebb5b1c8e91f7d0058af192ee8cb91b1c001d6b7dabb50acfec3f22c84ad"
 
 # The engine's IdentityState enum is NONE | MANAGED | DEGRADED (loci-core
 # features/documents.py). This file used to emit "ok", a value the engine cannot
@@ -120,6 +125,18 @@ def _uuid_for(path):
         return _IDS[path]
     h = f"{abs(hash(path)):032x}"[:32]
     return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+
+
+def _commit(status, path, old_hash=None, new_hash=None, detail=None):
+    """One SourceCommit, shaped exactly as an EFFECT returns it over the wire.
+
+    All five fields, always: the engine serialises the whole dataclass
+    (loci-core fs/outcomes.py). This file used to send `{"status": ...}` alone —
+    the same class of under-modelling as the 2-char revision, and invisible to
+    the 004 audit because that capture read the CLI, whose effect projection has
+    no `commit` at all (see capture-effects.py).
+    """
+    return {"status": status, "path": path, "old_hash": old_hash, "new_hash": new_hash, "detail": detail}
 
 
 def _doc(path, title=None, kind=None, state="managed", status="active"):
@@ -171,7 +188,8 @@ DEFAULTS = {
     "loci/workspaces/archive": {
         "view": {"id": "ws-1", "name": "WS1", "path": ".loci/workspaces/ws1.yaml", "project": None,
                  "archived": True, "documents": [], "files": []},
-        "commit": {"status": "source_committed"}, "revision": REVISION,
+        "commit": _commit("source_committed", ".loci/workspaces/ws1.yaml", HASH_A, HASH_B),
+        "revision": REVISION,
     },
     "loci/workspaces/archive/preview": {
         "command": "workspaces/archive", "refusals": [],
@@ -197,20 +215,70 @@ DEFAULTS = {
     "loci/documents/get": {"document": _doc("projects/p1.md", title="P1", kind="project")},
     "loci/documents/create": {
         "document": _doc("notes/x.md", title="x", kind=None),
-        "commit": {"status": "source_committed"}, "revision": REVISION,
+        "commit": _commit("source_committed", "notes/x.md", None, HASH_B),
+        "revision": REVISION,
     },
     "loci/documents/adopt": {
         "document": _doc("notes/a.md", title="a"),
-        "commit": {"status": "source_committed"}, "revision": REVISION,
+        "commit": _commit("source_committed", "notes/a.md", HASH_A, HASH_B),
+        "revision": REVISION,
     },
     "loci/documents/adopt/preview": {
         "command": "documents/adopt", "refusals": [],
         "changes": [{"kind": "patch", "path": "notes/a.md",
                      "before_excerpt": "", "after_excerpt": "loci: id-a"}],
     },
+    # The four capabilities the client gained a surface for in 005. Shapes captured
+    # from a live loci-lsp (capture-effects.py): `format_owned` carries `formatted`,
+    # `add_project` carries `adopted_first`, and both relations verbs answer with
+    # `member` rather than a DocumentView.
+    "loci/documents/format_owned": {
+        "document": _doc("notes/a.md", title="Note A"),
+        "commit": _commit("source_committed", "notes/a.md", HASH_A, HASH_B),
+        "revision": REVISION, "formatted": True,
+    },
+    "loci/documents/format_owned/preview": {
+        "command": "documents.format_owned", "refusals": [],
+        "changes": [{"kind": "patch", "path": "notes/a.md",
+                     "before_excerpt": "loci:\n  schema: 1\n  id: 7527c974",
+                     "after_excerpt": "loci:\n  schema: 1\n  id: 7527c974\n  projects: []"}],
+    },
+    "loci/documents/set_status": {
+        "document": _doc("notes/a.md", title="Note A", status="waiting"),
+        "commit": _commit("source_committed", "notes/a.md", HASH_A, HASH_B),
+        "revision": REVISION,
+    },
+    "loci/documents/set_status/preview": {
+        "command": "documents.set_status", "refusals": [],
+        "changes": [{"kind": "patch", "path": "notes/a.md",
+                     "before_excerpt": "status: active\n", "after_excerpt": "status: waiting\n"}],
+    },
+    "loci/relations/add_project": {
+        "member": "notes/a.md",
+        "commit": _commit("source_committed", "notes/a.md", HASH_A, HASH_B),
+        "revision": REVISION, "adopted_first": False,
+    },
+    "loci/relations/add_project/preview": {
+        "command": "relations.add_project", "refusals": [],
+        "changes": [{"kind": "patch", "path": "notes/a.md",
+                     "before_excerpt": "  projects: []",
+                     "after_excerpt": "  projects:\n    - d186b97b-c1f8-4fb8-8af9-3272417762ab"}],
+    },
+    "loci/relations/remove_project": {
+        "member": "notes/a.md",
+        "commit": _commit("source_committed", "notes/a.md", HASH_B, HASH_A),
+        "revision": REVISION,
+    },
+    "loci/relations/remove_project/preview": {
+        "command": "relations.remove_project", "refusals": [],
+        "changes": [{"kind": "patch", "path": "notes/a.md",
+                     "before_excerpt": "  projects:\n    - d186b97b-c1f8-4fb8-8af9-3272417762ab",
+                     "after_excerpt": "  projects: []"}],
+    },
     "loci/documents/move": {
         "document": _doc("notes/b.md", title="b"),
-        "commit": {"status": "source_committed"}, "revision": REVISION,
+        "commit": _commit("source_committed", "notes/b.md", HASH_A, HASH_A),
+        "revision": REVISION,
     },
     "loci/documents/move/preview": {
         "command": "documents/move", "refusals": [],
@@ -249,14 +317,31 @@ DEFAULTS = {
             "# Note A\n\nNote A body. See [[Note B]].\n", -2.7062756914445156,
         ]]
     },
+    # The host adds `uri` to `command.arguments[0]` (apps/lsp/server.py:182-194) —
+    # it is how the client targets the right buffer without re-deriving it. The
+    # fake omitted it, so `a.uri or vim.uri_from_bufnr(bufnr)` was only ever
+    # exercised on its fallback branch. `expected_hash` is a 64-char content hash,
+    # not "abc" (005).
+    # `loci.action.execute` — the ONE workspace/executeCommand. `commit` is a
+    # STRING, not a SourceCommit object: the adapter projects
+    # `result.commit.status.value` (apps/lsp/adapter.py:252-255). This lived
+    # inline in the handler, where the validator could only mirror it — and a
+    # mirror is a fixture that can drift. Both read this entry now (005).
+    "workspace/executeCommand:loci.action.execute": {"applied": True, "commit": "source_committed"},
+    # `loci/saveResult` after a committed didSave. A REFUSED save drops
+    # `revision` (see handle_notification) — `save_result_optional_keys` records
+    # which keys are outcome-dependent. Same reason as above: one definition,
+    # read by the handler and by the validator.
+    "loci/saveResult": {"committed": True, "reason": "ok", "revision": REVISION},
     "textDocument/codeAction": [
         {
             "title": "Set status: active", "kind": "quickfix",
             "data": {"action_id": "documents.set_status", "path": "notes/a.md",
-                     "expected_hash": "abc", "args": ["active"]},
+                     "expected_hash": HASH_A, "args": ["active"]},
             "command": {"title": "Set status: active", "command": "loci.action.execute",
-                        "arguments": [{"action_id": "documents.set_status", "path": "notes/a.md",
-                                       "expected_hash": "abc", "args": ["active"]}]},
+                        "arguments": [{"uri": "file:///vault/notes/a.md",
+                                       "action_id": "documents.set_status", "path": "notes/a.md",
+                                       "expected_hash": HASH_A, "args": ["active"]}]},
         }
     ],
 }
@@ -341,20 +426,93 @@ def _validate_defaults():
         # fiction as identity_state "ok", and missed by the 004 audit because that
         # capture used the CLI, whose effect projection hides the SourceCommit.
         commit = value.get("commit")
-        if isinstance(commit, dict) and commit.get("status") not in enums["commit_status"]:
-            errors.append(
-                f"{wire}.commit.status={commit.get('status')!r} is not in the engine "
-                f"vocabulary {enums['commit_status']}"
-            )
+        if isinstance(commit, dict):
+            if commit.get("status") not in enums["commit_status"]:
+                errors.append(
+                    f"{wire}.commit.status={commit.get('status')!r} is not in the engine "
+                    f"vocabulary {enums['commit_status']}"
+                )
+            # The whole SourceCommit crosses the wire, not just its status (005).
+            expected_commit = set(spec.get("commit_keys") or ())
+            if expected_commit and set(commit) != expected_commit:
+                errors.append(
+                    f"{wire}.commit keys {sorted(set(commit))} != engine {sorted(expected_commit)}"
+                )
+            for field in ("old_hash", "new_hash"):
+                if commit.get(field) is not None:
+                    check_revision(f"{wire}.commit.{field}", commit[field])
 
     check_revision("REVISION", REVISION)
     check_revision("REVISION_2", REVISION_2)
+    check_revision("HASH_A", HASH_A)
+    check_revision("HASH_B", HASH_B)
+
+    # ---- effect surfaces the wire carries OUTSIDE the feature envelope ----------
+    #
+    # `saveResult`, the code-action rows and the `loci.action.execute` result are
+    # all effect shapes, and all three were unvalidated: the 004 audit's ground
+    # truth was the CLI, which has no saveResult, no code actions and no
+    # executeCommand at all. Their contract now comes from `capture-effects.py`,
+    # which probes a live loci-lsp.
+
+    save_required = set(contract.get("save_result_keys") or ())
+    save_optional = set(contract.get("save_result_optional_keys") or ())
+    save_reasons = set(contract.get("save_result_reasons") or ())
+    # `uri` is added per-request by handle_notification; validate the rest.
+    default_save = {**DEFAULTS["loci/saveResult"], "uri": ""}
+    if save_required and not save_required <= set(default_save):
+        errors.append(f"saveResult: missing engine key(s) {sorted(save_required - set(default_save))}")
+    stray = set(default_save) - save_required - save_optional
+    if save_required and stray:
+        errors.append(f"saveResult: key(s) {sorted(stray)} are not in the engine's shape")
+    if save_reasons and default_save["reason"] not in save_reasons:
+        errors.append(
+            f"saveResult.reason={default_save['reason']!r} is not in the engine vocabulary "
+            f"{sorted(save_reasons)}"
+        )
+    check_revision("saveResult.revision", default_save["revision"])
+
+    actions = DEFAULTS.get("textDocument/codeAction") or []
+    action_keys = set(contract.get("code_action_keys") or ())
+    data_keys = set(contract.get("code_action_data_keys") or ())
+    arg_keys = set(contract.get("code_action_command_argument_keys") or ())
+    for i, action in enumerate(actions):
+        if action_keys and set(action) != action_keys:
+            errors.append(f"codeAction[{i}]: keys {sorted(set(action))} != engine {sorted(action_keys)}")
+            continue
+        if data_keys and set(action["data"]) != data_keys:
+            errors.append(
+                f"codeAction[{i}].data keys {sorted(set(action['data']))} != engine {sorted(data_keys)}"
+            )
+        else:
+            check_revision(f"codeAction[{i}].data.expected_hash", action["data"]["expected_hash"])
+        arg = (action.get("command") or {}).get("arguments", [{}])[0]
+        if arg_keys and set(arg) != arg_keys:
+            errors.append(
+                f"codeAction[{i}].command.arguments[0] keys {sorted(set(arg))} != engine {sorted(arg_keys)}"
+            )
+
+    # `loci.action.execute` answers `{applied, commit}` with commit a STRING
+    # (adapter.execute_action projects `commit.status.value`), or
+    # `{applied: False, reason}` for an unknown action.
+    exec_value = DEFAULTS["workspace/executeCommand:loci.action.execute"]
+    exec_keys = set(contract.get("action_execute_keys") or ())
+    if exec_keys and set(exec_value) != exec_keys:
+        errors.append(f"loci.action.execute: keys {sorted(set(exec_value))} != engine {sorted(exec_keys)}")
+    if contract.get("action_execute_commit_is_object") is False and isinstance(exec_value["commit"], dict):
+        errors.append("loci.action.execute.commit is an object; the engine sends the status STRING")
+    if exec_value["commit"] not in enums["commit_status"]:
+        errors.append(
+            f"loci.action.execute.commit={exec_value['commit']!r} is not in the engine "
+            f"vocabulary {enums['commit_status']}"
+        )
 
     if errors:
         sys.stderr.write(
             "fs_v2: FIXTURES DRIFTED FROM THE ENGINE CONTRACT (fixtures.json)\n"
             "  Fixtures must share the engine's shape, width, and vocabulary (004 R6).\n"
-            "  Re-capture with ./capture-fixtures.sh <vault> --write-contract, or fix the fixture.\n\n"
+            "  Re-capture reads with ./capture-fixtures.sh <vault> --write-contract,\n"
+            "  effects with ./capture-effects.py --write-contract, or fix the fixture.\n\n"
             + "".join(f"  - {e}\n" for e in errors)
         )
         sys.exit(2)
@@ -400,9 +558,17 @@ def handle_notification(msg):
                   "params": {"uri": params["textDocument"]["uri"], "diagnostics": _diags}})
         return
     if method == "textDocument/didSave":
-        result = {"committed": True, "reason": "ok", "revision": REVISION}
+        # A committed save carries `revision`; a refused one does NOT (the adapter
+        # returns `{committed: False, reason}` and the host only adds `uri` +
+        # a default `reason`). The fake padded every outcome with a revision, so a
+        # client reading `result.revision` after a conflict would find one under
+        # test and nothing on the real server (005). `save_result_optional_keys`
+        # in fixtures.json records the split.
+        result = dict(DEFAULTS["loci/saveResult"])
         if "save" in _overrides:
             result = _overrides["save"]
+            if result.get("committed") is False:
+                result.pop("revision", None)
         # The engine sends `{uri, **result}` (apps/lsp/server.py:146) — the uri is
         # how a client attributes a CAS conflict to the buffer that caused it. The
         # fake used to drop it, which removed per-buffer attribution from the
@@ -434,7 +600,13 @@ def handle_request(msg):
         if cmd == "loci.test.crash":
             sys.exit(3)
         if cmd == "loci.action.execute":
-            send({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "value": {"applied": True, "commit": {"status": "source_committed"}}}})
+            # `commit` here is a STRING, not a SourceCommit object: the adapter
+            # projects `result.commit.status.value` (apps/lsp/adapter.py:252-255).
+            # The fake sent `{"status": ...}`, so a client that read
+            # `value.commit.status` would work under test and break on the real
+            # server — the F-16 failure mode in a second place (005).
+            send({"jsonrpc": "2.0", "id": msg["id"],
+                  "result": {"ok": True, "value": DEFAULTS["workspace/executeCommand:loci.action.execute"]}})
             return
         send({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "value": {}}})
         return

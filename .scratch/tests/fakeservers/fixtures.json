@@ -1,7 +1,17 @@
 {
   "_comment": [
     "ENGINE CONTRACT — captured from the real loci engine, not hand-authored.",
-    "Regenerate with: ./capture-fixtures.sh <vault> --write-contract",
+    "Regenerate READS with:   ./capture-fixtures.sh <vault> --write-contract",
+    "Regenerate EFFECTS with: ./capture-effects.py --write-contract",
+    "",
+    "Two capture routes because the two halves have different ground truth. For a",
+    "READ the CLI envelope is the wire envelope, so the CLI is honest. For an EFFECT",
+    "it is not: the CLI projects a CommandPreview ({command, changes, refusals,",
+    "_committed}) while the LSP host sends the SourceCommit ({document, commit,",
+    "revision}). Project 004 captured effects from the CLI and validated the fake",
+    "against a shape the client never sees — two live bugs (F-14, F-15) and one",
+    "invented enum value (F-16) came out of that blind spot. capture-effects.py",
+    "speaks JSON-RPC to a real loci-lsp instead.",
     "",
     "fs_v2.py validates its DEFAULTS against this file at startup and refuses to",
     "run on drift. This is what enforces the 004 R6 rule (a fixture must share the",
@@ -16,10 +26,27 @@
   "revision_length": 64,
   "id_pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
   "enums": {
-    "identity_state": ["none", "managed", "degraded"],
-    "kind": [null, "daily", "task", "project"],
-    "status": [null, "active", "waiting", "duplicated"],
-    "state": ["managed", "unmanaged"],
+    "identity_state": [
+      "none",
+      "managed",
+      "degraded"
+    ],
+    "kind": [
+      null,
+      "daily",
+      "task",
+      "project"
+    ],
+    "status": [
+      null,
+      "active",
+      "waiting",
+      "duplicated"
+    ],
+    "state": [
+      "managed",
+      "unmanaged"
+    ],
     "commit_status": [
       "source_committed",
       "source_committed_cache_failed",
@@ -27,63 +54,378 @@
       "unexpected"
     ]
   },
-  "document_keys": ["path", "id", "kind", "title", "status", "state", "identity_state"],
-  "workspace_view_keys": ["id", "name", "path", "project", "archived", "documents", "files"],
+  "document_keys": [
+    "path",
+    "id",
+    "kind",
+    "title",
+    "status",
+    "state",
+    "identity_state"
+  ],
+  "workspace_view_keys": [
+    "id",
+    "name",
+    "path",
+    "project",
+    "archived",
+    "documents",
+    "files"
+  ],
   "wires": {
     "loci/workspaces/list": {
-      "keys": ["workspaces"],
-      "rows_of": { "workspaces": "workspace_view" }
+      "keys": [
+        "workspaces"
+      ],
+      "rows_of": {
+        "workspaces": "workspace_view"
+      }
     },
     "loci/workspaces/get": {
-      "keys": ["view"],
-      "object_of": { "view": "workspace_view" }
+      "keys": [
+        "view"
+      ],
+      "object_of": {
+        "view": "workspace_view"
+      }
     },
     "loci/workspaces/put": {
-      "keys": ["workspace_id", "path", "commits", "adopted_members", "revision"]
+      "keys": [
+        "adopted_members",
+        "commits",
+        "path",
+        "revision",
+        "workspace_id"
+      ]
     },
     "loci/workspaces/archive": {
-      "keys": ["view", "commit", "revision"],
-      "object_of": { "view": "workspace_view" }
+      "keys": [
+        "commit",
+        "revision",
+        "view"
+      ],
+      "object_of": {
+        "view": "workspace_view"
+      },
+      "commit_keys": [
+        "detail",
+        "new_hash",
+        "old_hash",
+        "path",
+        "status"
+      ]
     },
     "loci/documents/list": {
-      "keys": ["documents"],
-      "rows_of": { "documents": "document" }
+      "keys": [
+        "documents"
+      ],
+      "rows_of": {
+        "documents": "document"
+      }
     },
     "loci/documents/get": {
-      "keys": ["document"],
-      "object_of": { "document": "document" }
+      "keys": [
+        "document"
+      ],
+      "object_of": {
+        "document": "document"
+      }
     },
     "loci/documents/create": {
-      "keys": ["document", "commit", "revision"],
-      "object_of": { "document": "document" }
+      "keys": [
+        "commit",
+        "document",
+        "revision"
+      ],
+      "object_of": {
+        "document": "document"
+      },
+      "commit_keys": [
+        "detail",
+        "new_hash",
+        "old_hash",
+        "path",
+        "status"
+      ]
     },
     "loci/documents/adopt": {
-      "keys": ["document", "commit", "revision"],
-      "object_of": { "document": "document" }
+      "keys": [
+        "commit",
+        "document",
+        "revision"
+      ],
+      "object_of": {
+        "document": "document"
+      },
+      "commit_keys": [
+        "detail",
+        "new_hash",
+        "old_hash",
+        "path",
+        "status"
+      ]
     },
     "loci/documents/move": {
-      "keys": ["document", "commit", "revision"],
-      "object_of": { "document": "document" }
+      "keys": [
+        "commit",
+        "document",
+        "revision"
+      ],
+      "object_of": {
+        "document": "document"
+      },
+      "commit_keys": [
+        "detail",
+        "new_hash",
+        "old_hash",
+        "path",
+        "status"
+      ]
     },
     "loci/maintenance/refresh": {
-      "keys": ["revision", "consistency", "changed_sources", "diagnostics_summary"],
-      "row_arity": { "diagnostics_summary": 2 }
+      "keys": [
+        "revision",
+        "consistency",
+        "changed_sources",
+        "diagnostics_summary"
+      ],
+      "row_arity": {
+        "diagnostics_summary": 2
+      }
     },
     "loci/search/text": {
-      "keys": ["results"],
-      "row_arity": { "results": 6 }
+      "keys": [
+        "results"
+      ],
+      "row_arity": {
+        "results": 6
+      }
     },
-    "loci/graph/backlinks": { "keys": ["rows"], "row_arity": { "rows": 3 } },
-    "loci/graph/broken_links": { "keys": ["rows"], "row_arity": { "rows": 3 } },
-    "loci/graph/missing_attachments": { "keys": ["rows"], "row_arity": { "rows": 2 } },
-    "loci/graph/project_members": { "keys": ["rows"], "row_arity": { "rows": 3 } },
-    "loci/graph/traversal": { "keys": ["rows"], "row_arity": { "rows": 2 } },
-    "loci/graph/ambiguous_links": { "keys": ["rows"] },
-    "loci/graph/neighbors": { "keys": ["rows"], "row_scalar": ["rows"] },
-    "loci/graph/orphans": { "keys": ["rows"], "row_scalar": ["rows"] },
-    "loci/workspaces/archive/preview": { "keys": ["command", "refusals", "changes"] },
-    "loci/workspaces/put/preview": { "keys": ["command", "refusals", "changes"] },
-    "loci/documents/adopt/preview": { "keys": ["command", "refusals", "changes"] },
-    "loci/documents/move/preview": { "keys": ["command", "refusals", "changes"] }
-  }
+    "loci/graph/backlinks": {
+      "keys": [
+        "rows"
+      ],
+      "row_arity": {
+        "rows": 3
+      }
+    },
+    "loci/graph/broken_links": {
+      "keys": [
+        "rows"
+      ],
+      "row_arity": {
+        "rows": 3
+      }
+    },
+    "loci/graph/missing_attachments": {
+      "keys": [
+        "rows"
+      ],
+      "row_arity": {
+        "rows": 2
+      }
+    },
+    "loci/graph/project_members": {
+      "keys": [
+        "rows"
+      ],
+      "row_arity": {
+        "rows": 3
+      }
+    },
+    "loci/graph/traversal": {
+      "keys": [
+        "rows"
+      ],
+      "row_arity": {
+        "rows": 2
+      }
+    },
+    "loci/graph/ambiguous_links": {
+      "keys": [
+        "rows"
+      ]
+    },
+    "loci/graph/neighbors": {
+      "keys": [
+        "rows"
+      ],
+      "row_scalar": [
+        "rows"
+      ]
+    },
+    "loci/graph/orphans": {
+      "keys": [
+        "rows"
+      ],
+      "row_scalar": [
+        "rows"
+      ]
+    },
+    "loci/workspaces/archive/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/workspaces/put/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/documents/adopt/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/documents/move/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/documents/create/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/documents/format_owned/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/documents/format_owned": {
+      "keys": [
+        "commit",
+        "document",
+        "formatted",
+        "revision"
+      ],
+      "commit_keys": [
+        "detail",
+        "new_hash",
+        "old_hash",
+        "path",
+        "status"
+      ]
+    },
+    "loci/documents/set_status/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/documents/set_status": {
+      "keys": [
+        "commit",
+        "document",
+        "revision"
+      ],
+      "commit_keys": [
+        "detail",
+        "new_hash",
+        "old_hash",
+        "path",
+        "status"
+      ]
+    },
+    "loci/documents/preview_adoption": {
+      "keys": [
+        "preview"
+      ]
+    },
+    "loci/relations/add_project/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/relations/add_project": {
+      "keys": [
+        "adopted_first",
+        "commit",
+        "member",
+        "revision"
+      ],
+      "commit_keys": [
+        "detail",
+        "new_hash",
+        "old_hash",
+        "path",
+        "status"
+      ]
+    },
+    "loci/relations/remove_project/preview": {
+      "keys": [
+        "changes",
+        "command",
+        "refusals"
+      ]
+    },
+    "loci/relations/remove_project": {
+      "keys": [
+        "commit",
+        "member",
+        "revision"
+      ],
+      "commit_keys": [
+        "detail",
+        "new_hash",
+        "old_hash",
+        "path",
+        "status"
+      ]
+    }
+  },
+  "save_result_keys": [
+    "committed",
+    "reason",
+    "uri"
+  ],
+  "save_result_optional_keys": [
+    "revision"
+  ],
+  "save_result_reasons": [
+    "destination_exists",
+    "not_open",
+    "ok",
+    "source_hash_mismatch",
+    "unchanged"
+  ],
+  "code_action_keys": [
+    "command",
+    "data",
+    "kind",
+    "title"
+  ],
+  "code_action_data_keys": [
+    "action_id",
+    "args",
+    "expected_hash",
+    "path"
+  ],
+  "code_action_command_argument_keys": [
+    "action_id",
+    "args",
+    "expected_hash",
+    "path",
+    "uri"
+  ],
+  "action_execute_keys": [
+    "applied",
+    "commit"
+  ],
+  "action_execute_commit_is_object": false
 }

@@ -152,6 +152,110 @@ function M.session_file(name)
   return vim.fn.stdpath("data") .. "/" .. M.sessions:gsub("^/", "") .. "/" .. name .. ".json"
 end
 
+-- ---- TUI driver ---------------------------------------------------------------
+--
+-- Everything above drives the client by CALLING it. That leaves a real gap: it
+-- cannot see what a user sees, and it cannot press a key. `vim.ui.select` is the
+-- sharp edge — headless it blocks forever, so every flow that confirms through it
+-- (preview-then-apply, every picker on a machine without Snacks) was exercised only
+-- by stubbing the prompt away. A stubbed prompt proves the callback runs; it proves
+-- nothing about whether the prompt renders or whether answering it works.
+--
+-- The driver spawns a CHILD nvim inside a terminal buffer of this (headless) one.
+-- The terminal buffer is a real libvterm screen, so the child runs its ordinary TUI:
+-- `nvim_buf_get_lines` reads what is actually drawn, and `chansend` types into it.
+-- No pty helper, no extra dependency, no escape-sequence parsing — nvim already
+-- owns both halves.
+--
+-- SCOPE. This repo cannot render Snacks: the picker is nix-nvim's dependency, not
+-- loci.nvim's, and `pick()` falls back to `vim.ui.select` when it is absent. What is
+-- verifiable here is the fallback path — which is also what a user without Snacks
+-- gets — plus `vim.ui.input`, notifications, and keyboard confirmation. Snacks
+-- *visuals* stay out of scope and belong downstream, where Snacks exists.
+
+local Tui = {}
+Tui.__index = Tui
+
+-- Spawn a child nvim on `file`, with `plugin_root` on its runtimepath and `bin_dir`
+-- first on PATH (put a `loci-lsp` shim there to reach the real attach path).
+function M.spawn_tui(opts)
+  local self = setmetatable({}, Tui)
+  vim.cmd("enew")
+  self.buf = vim.api.nvim_get_current_buf()
+  local nvim = opts.nvim or vim.v.progpath
+  -- `require("loci")` must run BEFORE the file is opened: the attach autocmd is
+  -- BufReadPost/BufNewFile, and a file passed as argv is already loaded by the time
+  -- `-c` commands run — so the plugin would register its autocmd after the only
+  -- event that would have fired it, and nothing ever attaches. Open the file with a
+  -- second `-c` instead, which is also what a user does.
+  local cmd = {
+    nvim, "-u", "NONE", "--cmd", "set rtp+=" .. M.plugin_root,
+    "-c", "lua require('loci')",
+    "-c", "edit " .. vim.fn.fnameescape(opts.file),
+  }
+  self.job = vim.fn.jobstart(cmd, {
+    term = true,
+    env = {
+      PATH = (opts.bin_dir and (opts.bin_dir .. ":") or "") .. vim.env.PATH,
+      -- keep the child out of the parent's (and the user's) state
+      HOME = opts.home or M.work,
+      XDG_DATA_HOME = M.work .. "/xdg-data",
+      XDG_STATE_HOME = M.work .. "/xdg-state",
+      XDG_CACHE_HOME = M.work .. "/xdg-cache",
+      NVIM = "", -- else the child treats this nvim as its parent and refuses the TUI
+      NVIM_LISTEN_ADDRESS = "",
+    },
+  })
+  return self
+end
+
+-- The child's screen, as one string (blank right margin trimmed per line).
+function Tui:screen()
+  if not vim.api.nvim_buf_is_valid(self.buf) then
+    return ""
+  end
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+  for i, l in ipairs(lines) do
+    lines[i] = (l:gsub("%s+$", ""))
+  end
+  return table.concat(lines, "\n")
+end
+
+-- Type into the child. `keys` is literal text; use "\r" for Enter.
+function Tui:feed(keys)
+  vim.fn.chansend(self.job, keys)
+end
+
+-- Wait until the child's screen contains `text` (plain substring). Returns
+-- true, or false plus the last screen seen.
+function Tui:wait_for(text, timeout_ms)
+  local last = ""
+  local ok = M.wait_for(function()
+    last = self:screen()
+    return last:find(text, 1, true) ~= nil
+  end, timeout_ms or 15000)
+  return ok, last
+end
+
+-- Block until the child's loci client has finished initialize. A picker only draws
+-- once a reply arrives, so feeding `:LociWorkspaces` the moment the buffer appears
+-- races the attach and the test flakes. The child does the waiting (one `vim.wait`
+-- inside it) and prints a sentinel; the parent watches for the sentinel.
+function Tui:wait_attached(timeout_ms)
+  local budget = timeout_ms or 20000
+  self:feed(
+    ":lua vim.wait(" .. budget .. ", function() local c = vim.lsp.get_clients({name='loci'})[1];"
+      .. " return c ~= nil and c.initialized end, 100); print('LOCI-READY')\r"
+  )
+  local ok, screen = self:wait_for("LOCI-READY", budget + 5000)
+  self:feed("\r") -- dismiss the "Press ENTER" prompt the print leaves behind
+  return ok, screen
+end
+
+function Tui:stop()
+  pcall(vim.fn.jobstop, self.job)
+end
+
 -- Read a text file (nil if missing).
 function M.read_file(path)
   local f = io.open(path, "r")
