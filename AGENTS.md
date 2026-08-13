@@ -44,7 +44,15 @@ It exports per-system **`packages`**, not option-modules:
 - **Owned** (template seeds, you fill): the whole `flake.nix` / package build, docs, optional `scripts/`.
 
 ## Validate
-`nix flake check`.
+`nix flake check` — the client against the engine as **published** (`flake.lock` pins a
+pushed `loci-core` rev).
+
+`scripts/check-local-engine.sh` — the client against the engine as **written**: it points
+the `loci-core` input at the sibling checkout (`../loci-core`, uncommitted work included),
+runs both suites, then re-captures the effect contract from the live local `loci-lsp` and
+diffs it against `fakeservers/fixtures.json`. Run it whenever loci-core changes; a passing
+suite cannot see wire drift, because `fs_v2.py` validates itself against those same
+fixtures. Add `--vault <root>` to cover the read half of the contract too.
 
 ## Author
 Bullish Design <BullishDesignEngineering@gmail.com>
