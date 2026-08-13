@@ -41,6 +41,16 @@
 # --vault is opt-in because the read capture needs a real vault and WRITES to
 # nothing, while the effect capture builds its own throwaway vault every run.
 #
+# READ THE READ-HALF DIFF CAREFULLY. Its `enums` lists (`kind`, `status`, `state`,
+# `identity_state`) are derived from the VALUES PRESENT IN THE VAULT YOU PASS, not
+# from anything the engine declares. Point it at a different vault and those lists
+# change with no engine change at all — measured 2026-08-13 against a generated
+# representative vault (loci-core `tools/build_representative_vault.py`), which
+# added `reference`/`idea`/`meeting` kinds and `done`/`archived`/`planned` statuses
+# purely because it contains notes the previous capture's vault did not. A WIDER
+# list is corpus variance; treat only a NARROWER list, or a changed key set, as
+# drift. Use the same vault as the tracked capture when you want a clean diff.
+#
 # Exit: 0 clean, 1 a gate failed or the wire drifted, 3 usage error.
 set -uo pipefail
 

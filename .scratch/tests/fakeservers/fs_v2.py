@@ -165,6 +165,22 @@ def _env(method, value):
     return value
 
 
+# Membership rows, shaped exactly as the engine sends them (captured 2026-08-13
+# from a real loci-lsp `workspaces/get`):
+#
+#   documents -> [id, role, resolved_id, state, path]   — FIVE fields
+#   files     -> [path, role]                           — two
+#
+# Both lists were `[]` here until then. That is the 004 F-07 defect one level
+# down: the KEY was present, so the fake looked faithful, but no test ever saw a
+# populated row — and `link_file`'s read-modify-write round-trips exactly these
+# rows. It read `d[1]`/`d[2]` off a list that was always empty under test.
+_WS_DOC_ROW = ["019ffcd4-f279-7000-ad25-32f2a533863d", "primary",
+               "019ffcd4-f279-7000-ad25-32f2a533863d", "resolved", "projects/p1.md"]
+# NOT `note.md`: that is the file t18 links, and a pre-existing row for it would
+# trip link_file's own duplicate refusal instead of the path under test.
+_WS_FILE_ROW = ["notes/existing.md", "reference"]
+
 DEFAULTS = {
     # Real `workspaces/list` rows carry `documents`/`files` too — the fake used to
     # model membership only on `workspaces/get`, so list-row membership reads were
@@ -172,13 +188,13 @@ DEFAULTS = {
     "loci/workspaces/list": {
         "workspaces": [
             {"id": "ws-1", "name": "WS1", "path": ".loci/workspaces/ws1.yaml", "project": None,
-             "archived": False, "documents": [], "files": []}
+             "archived": False, "documents": [list(_WS_DOC_ROW)], "files": [list(_WS_FILE_ROW)]}
         ]
     },
     "loci/workspaces/get": {
         "view": {
             "id": "ws-1", "name": "WS1", "path": ".loci/workspaces/ws1.yaml", "project": None,
-            "archived": False, "documents": [], "files": [],
+            "archived": False, "documents": [list(_WS_DOC_ROW)], "files": [list(_WS_FILE_ROW)],
         }
     },
     "loci/workspaces/put": {

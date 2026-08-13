@@ -526,17 +526,27 @@ table is the half that capture could not see.
 | `codeAction[].command.arguments[0]` | `{uri, action_id, path, expected_hash, args}` | no `uri` | ✅ |
 | `loci.action.execute` | `{applied, commit: "source_committed"}` — a **string** | `commit: {status}` | ✅ |
 | `loci.action.execute` unknown | `{applied: false, reason: "unknown action …"}` | n/a | unchanged |
-| `documents/adopt` on a missing file | `ok: false`, `error.kind: "FileNotFoundError"` | n/a | engine note: a raw `OSError` leaks as the error kind rather than a `LociError` subclass |
+| `documents/adopt` on a missing file | `ok: false`, `error.kind: "FileNotFoundError"` | n/a | fixed in loci-core c34dc83: `_read_source` now raises `UnresolvedReferenceError`, so `error.kind` is a `LociError` subclass a client can be written against |
 
 ---
 
 ## Addendum — 2026-08-13: the engine items, implemented and measured
 
-> **Landing status.** Every engine change below is written, tested and verified — and **not yet on
-> loci-core main**. It waits in the `34-live-demo-suite` lane, which a concurrent session owns and
-> has not described. loci-core main at `3758a58` (v0.4.0) carries project 35's process docs and the
-> version bump only. So `:w` on a new note still warns in the fleet, and the loci.nvim release is
-> held until the engine ships. The client passes against `3758a58`: 33/33 plus the engine suite.
+> **Landing status — closed 2026-08-13.** Every engine change below is on loci-core main at
+> `c34dc83` (v0.4.1), which this repo's `flake.lock` now pins. R1 (the new-file save), R2 (the
+> unanswerable request) and the adopt error-kind patch all shipped with project 34.
+>
+> Measured against that rev, not assumed: **t34** drives a real `:w` on a new note through the REAL
+> `loci-lsp` and reads the `loci/saveResult` payload. It answers `unchanged` and the client is
+> silent — on the first save and on every later one. The same test FAILS against the previous
+> engine build with `destination_exists`, twice, which is what makes it a gate rather than a
+> restatement. The client passes 35/35 plus the engine suite.
+>
+> The same rev also tightened `coerce_value`, which refuses a malformed field at the boundary
+> instead of guessing. One client path could have met it: `link_file` round-trips a possibly-empty
+> member list, and an empty list sent as a JSON object is now refused. It is not a live bug —
+> neovim 0.12 encodes an unmarked empty table as `[]` — but both halves of that fact were unpinned
+> and they live in different repos. **t35** pins them.
 
 005 left four items open against loci-core, on the ground that the engine is not authored here.
 That reasoning held for *writing the patch* and not for *knowing whether the diagnosis was right*.

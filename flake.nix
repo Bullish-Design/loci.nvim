@@ -60,16 +60,18 @@
       # CI gates. The engine-side pytest/pytest-lsp gate lives in loci-core's own
       # flake and is re-exported here (AGENTS.md: the real test gate); the client
       # gate is the hermetic Lua suite, which now ALSO exercises the real
-      # `loci-lsp` binary (t17 real-server smoke) against this flake's re-export.
+      # `loci-lsp` binary (t17, t34, t35) against this flake's re-export.
       checks = forAllSystems (system:
         let pkgs = pkgsFor system; in {
           loci-lsp-tests = loci-core.checks.${system}.loci-lsp-tests;
 
           # Hermetic client suite: Python JSON-RPC fakeservers (fs_v2.py = a
           # reference implementation of the V2 wire contract) + fixture git
-          # vaults, one check per scenario — plus t17, which attaches the REAL
-          # loci-lsp (this flake's re-export) and runs a full documents/create
-          # round trip. Needs nvim >= 0.12 (the flake's nixpkgs provides 0.12.x).
+          # vaults, one check per scenario — plus t17, t34 and t35, which attach
+          # the REAL loci-lsp (this flake's re-export): a full documents/create
+          # round trip, `:w` on a new note, and a request only the engine's own
+          # coercion can refuse. Needs nvim >= 0.12 (the flake's nixpkgs provides
+          # 0.12.x).
           loci-nvim-tests = pkgs.stdenvNoCC.mkDerivation {
             name = "loci-nvim-tests";
             # NB: a flake's source is the GIT TREE, so untracked files (the

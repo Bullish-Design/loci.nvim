@@ -14,11 +14,11 @@
 -- answered `{committed: false, reason: "destination_exists"}`, and it repeated on every
 -- later `:w` in that session because the refusal path never advanced base_hash.
 --
--- The engine fix for that is WRITTEN AND TESTED but NOT YET LANDED: it waits in loci-core's
--- `34-live-demo-suite` lane, so the rev this repo's flake.lock pins still refuses. When it
--- lands, `did_save`'s create branch adopts the bytes on disk when they are the bytes the
+-- That engine bug is FIXED as of loci-core c34dc83 (v0.4.1), the rev this repo's flake.lock
+-- pins: `did_save`'s create branch now adopts the bytes on disk when they are the bytes the
 -- buffer holds, ingests, advances base_hash and answers `unchanged` — which this client is
--- silent about, like every other ordinary `:w`.
+-- silent about, like every other ordinary `:w`. **t34 measures that** against the real
+-- binary; this test does not, and must not be read as covering it.
 --
 -- Either way the payload below is the case that SURVIVES that fix — a file that appeared
 -- with content the buffer did not write, which the engine refuses now and will keep

@@ -30,9 +30,11 @@ It exports per-system **`packages`**, not option-modules:
 - The real test gate is loci-core's pytest/pytest-lsp suite (engine-side, re-exported as this
   flake's `checks.<sys>.loci-lsp-tests`). This repo's flake check `loci-nvim-tests` runs the
   hermetic Lua suite (`.scratch/tests/run-tests.sh`) against `fakeservers/fs_v2.py` — a
-  reference implementation of the V2 wire contract — plus t17, which attaches the REAL
-  `loci-lsp` (this flake's re-export of the engine's pygls host) for a full `documents/create`
-  round trip.
+  reference implementation of the V2 wire contract — plus t17, t34 and t35, which attach the
+  REAL `loci-lsp` (this flake's re-export of the engine's pygls host): t17 for a full
+  `documents/create` round trip, t34 for `:w` on a new note (a fake cannot measure it — the bug
+  lived in the ORDER neovim sends its events), t35 for a request the engine's own coercion is
+  the only thing that can refuse.
 
 ## Conventions (inherited from template-nix — do not break)
 - Personal-use-only: hardcode `andrew`; no portability / multi-user ceremony.

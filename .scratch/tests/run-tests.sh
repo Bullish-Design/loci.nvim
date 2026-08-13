@@ -36,21 +36,26 @@ if ! command -v loci-lsp >/dev/null 2>&1; then
   export PATH="$PATH:/etc/profiles/per-user/andrew/bin"
 fi
 
-# t17 (real-server smoke) needs a `loci` with the `init` verb AND the matching
-# `loci-lsp` — i.e. the V2 engine's build. The fleet profile can lag the
-# engine (pre-V2 binaries serve an old protocol and die on `loci init`), so
-# when the on-PATH `loci` lacks `init`, prefer THIS flake's own build (the nix
-# check already puts the re-export first on PATH; local runs rebuild once,
-# cached by the store).
-if ! loci --help 2>&1 | grep -qE '^  init'; then
-  if command -v nix >/dev/null 2>&1; then
-    local_loci_bin="$(cd "$REPO_ROOT" && nix build --no-link --print-out-paths .#loci-lsp 2>/dev/null || true)"
-    if [ -n "$local_loci_bin" ] && [ -x "$local_loci_bin/bin/loci-lsp" ]; then
-      export PATH="$local_loci_bin/bin:$PATH"
-      echo "run-tests: using the flake's own loci-lsp/loci ($local_loci_bin)"
-    else
-      echo "run-tests: WARNING on-PATH loci lacks 'init' and nix build failed; t17 will fail" >&2
-    fi
+# The real-server tests (t17, t34) must run against the engine THIS FLAKE PINS,
+# never against whatever `loci-lsp` the fleet profile happens to carry. Inside the
+# nix check that is already true — the checkPhase puts the re-export first on PATH
+# — so a local run must reach the same binary or it is measuring a different
+# engine and reporting it as this one's result.
+#
+# This used to test the profile binary for the `init` verb and keep it whenever it
+# had one. That heuristic answers "is this binary V2?", not "is this binary the
+# pinned rev", so a profile build one engine release behind passed the test and was
+# used: t34 then FAILED against a fix that had already landed in the pinned rev.
+# Build the flake's own output instead, unconditionally (cached by the store after
+# the first run). `NIX_BUILD_TOP` marks the sandbox, where there is no `nix` and no
+# network — leave PATH alone there.
+if [ -z "${NIX_BUILD_TOP:-}" ] && command -v nix >/dev/null 2>&1; then
+  local_loci_bin="$(cd "$REPO_ROOT" && nix build --no-link --print-out-paths .#loci-lsp 2>/dev/null || true)"
+  if [ -n "$local_loci_bin" ] && [ -x "$local_loci_bin/bin/loci-lsp" ]; then
+    export PATH="$local_loci_bin/bin:$PATH"
+    echo "run-tests: using the flake's own loci-lsp/loci ($local_loci_bin)"
+  else
+    echo "run-tests: WARNING could not build .#loci-lsp; falling back to PATH — t17/t34 may measure a DIFFERENT engine" >&2
   fi
 fi
 
@@ -178,6 +183,8 @@ tests=(
   "t31_diag_mapping"
   "t32_tui_interactive"
   "t33_relations_status"
+  "t34_real_new_file_save"
+  "t35_real_link_empty_workspace"
 )
 
 PASS=0

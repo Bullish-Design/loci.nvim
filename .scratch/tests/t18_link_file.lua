@@ -36,5 +36,21 @@ c.expect(linked, "link_file should get the view then preview+put workspaces/put 
 local log = c.read_file(c.work .. "/logA") or ""
 c.expect(log:find('"files"', 1, true) ~= nil, "the put should carry the files list: " .. log)
 c.expect(log:find('"documents"', 1, true) ~= nil, "the put must round-trip the view's documents (PUT replaces the manifest): " .. log)
+-- Name the round-tripped MEMBERS, not just the keys. The fake's view carried
+-- `documents: []` and `files: []` until 2026-08-13, so "the key is present" was the
+-- most this could ever prove — and a client that dropped every member would have
+-- passed it. The view now holds one real row of each shape (fs_v2, captured from a
+-- live server); a PUT that loses either one destroys membership, because the engine's
+-- manifest is wholly-owned and a PUT REPLACES it.
+-- the document row is [id, role, resolved_id, state, path] and the client PUTs
+-- `{ref = row[1]}` — the id, which is what `ref` accepts alongside a path
+c.expect(
+  log:find("019ffcd4-f279-7000-ad25-32f2a533863d", 1, true) ~= nil,
+  "the put must carry the view's existing document member: " .. log
+)
+c.expect(
+  log:find("notes/existing.md", 1, true) ~= nil,
+  "the put must carry the view's existing file member: " .. log
+)
 c.expect(not c.any_notice("failed"), "a clean link must not surface errors")
 c.finish()

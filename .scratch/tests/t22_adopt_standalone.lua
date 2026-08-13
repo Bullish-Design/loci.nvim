@@ -26,6 +26,14 @@ local adopted = c.wait_for(function()
     and l:find('"path": "note.md"', 1, true) ~= nil
 end, 8000)
 c.expect(adopted, "adopt should preview then apply documents/adopt with {path} = the buffer rel path")
-c.expect(checktimes >= 1, "apply_effect should have run :checktime to reload the engine-written buffer")
+-- `adopted` polls the SERVER's log, so it goes true when the fake RECEIVES the apply —
+-- before the client has read the response and run its `vim.schedule`d reload. Asserting
+-- the reload right here raced that schedule and failed under load (seen once in the nix
+-- check, never locally). t21 asserts the same thing safely because it first waits for the
+-- moved file to open, which happens AFTER the checktime. Wait for the effect itself.
+local reloaded = c.wait_for(function()
+  return checktimes >= 1
+end, 4000)
+c.expect(reloaded, "apply_effect should have run :checktime to reload the engine-written buffer")
 c.expect(not c.any_notice("failed"), "a clean adopt must not surface errors")
 c.finish()

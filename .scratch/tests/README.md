@@ -17,11 +17,13 @@ needing the real engine (which is being restored in loci-core, project 002 P0.2)
 ```
 
 Requires on PATH: `nvim` (0.12.x — override with `NVIM=/path/to/nvim`), `python3`, `git`,
-`timeout`. **t17 (real-server smoke) requires the REAL `loci-lsp` + `loci` binaries** (the V2
-engine's build): the runner falls back to `/etc/profiles/per-user/andrew/bin`, and if the
-on-PATH `loci` lacks the `init` verb (stale fleet profile), it builds this flake's own
-`.#loci-lsp` via `nix` and prepends it. The nix check does the same via the checkPhase PATH.
-Every other test is hermetic against the fakes.
+`timeout`. **t17 and t34 (the real-server tests) need the REAL `loci-lsp` + `loci`** — and
+specifically the engine rev `flake.lock` pins. Outside the nix sandbox the runner builds this
+flake's own `.#loci-lsp` and prepends it, every run (cached by the store after the first); the
+nix check gets the same binary from its checkPhase PATH. It does **not** accept whatever the
+fleet profile carries: a profile one engine release behind is still a working V2 server, and it
+silently answers these tests for a different engine than the one being released. Every other
+test is hermetic against the fakes.
 
 ## How it works
 
@@ -155,6 +157,10 @@ the real pygls host answers `loci/documents/create`, the file lands on disk with
 | refused effect (`commit.status`) is reported | t29 |
 | refused save on `:w` of a new file names file, reason, remedy | t30 |
 | diagnostics: PULL route, severity map, range map | t31 |
+| a real TUI: the prompt draws, and a keypress answers it | t32 |
+| the four late verbs: project membership, status, format | t33 |
+| **REAL engine**: `:w` on a new note is `unchanged`, and silent | t34 |
+| **REAL engine**: link into an EMPTY workspace (`[]` vs `{}`) | t35 |
 
 The old t09–t21 (palette args, activation, deactivation, editor_state, git writeback, doctor,
 real-server fullstack) are **deleted** — they encoded engine capabilities V2 removed (arch §18).

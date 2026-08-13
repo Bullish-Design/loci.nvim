@@ -184,10 +184,10 @@
     },
     "loci/maintenance/refresh": {
       "keys": [
-        "revision",
-        "consistency",
         "changed_sources",
-        "diagnostics_summary"
+        "consistency",
+        "diagnostics_summary",
+        "revision"
       ],
       "row_arity": {
         "diagnostics_summary": 2
