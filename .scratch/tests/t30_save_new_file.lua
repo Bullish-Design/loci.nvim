@@ -14,14 +14,16 @@
 -- answered `{committed: false, reason: "destination_exists"}`, and it repeated on every
 -- later `:w` in that session because the refusal path never advanced base_hash.
 --
--- THE ENGINE NOW FIXES THAT (loci-core, did_save's create branch): when the bytes on disk
--- are the bytes the buffer holds, it adopts them, ingests, advances base_hash and answers
--- `unchanged` — which this client is silent about, like every other ordinary `:w`.
+-- The engine fix for that is WRITTEN AND TESTED but NOT YET LANDED: it waits in loci-core's
+-- `34-live-demo-suite` lane, so the rev this repo's flake.lock pins still refuses. When it
+-- lands, `did_save`'s create branch adopts the bytes on disk when they are the bytes the
+-- buffer holds, ingests, advances base_hash and answers `unchanged` — which this client is
+-- silent about, like every other ordinary `:w`.
 --
--- So the payload below is no longer the everyday case; it is the case that SURVIVES the
--- engine fix — a file that appeared with content the buffer did not write, which the
--- engine still refuses. What this test pins is the CLIENT's behaviour for a real refusal:
--- name the file, quote the engine's reason verbatim, and say the bytes are on disk without
+-- Either way the payload below is the case that SURVIVES that fix — a file that appeared
+-- with content the buffer did not write, which the engine refuses now and will keep
+-- refusing. What this test pins is the CLIENT's behaviour for a real refusal: name the
+-- file, quote the engine's reason verbatim, and say the bytes are on disk without
 -- inventing a remedy.
 local c = dofile(vim.env.LOCI_TESTS .. "/common.lua")
 local loci = require("loci")

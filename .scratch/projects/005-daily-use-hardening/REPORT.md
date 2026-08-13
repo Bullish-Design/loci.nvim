@@ -532,6 +532,12 @@ table is the half that capture could not see.
 
 ## Addendum — 2026-08-13: the engine items, implemented and measured
 
+> **Landing status.** Every engine change below is written, tested and verified — and **not yet on
+> loci-core main**. It waits in the `34-live-demo-suite` lane, which a concurrent session owns and
+> has not described. loci-core main at `3758a58` (v0.4.0) carries project 35's process docs and the
+> version bump only. So `:w` on a new note still warns in the fleet, and the loci.nvim release is
+> held until the engine ships. The client passes against `3758a58`: 33/33 plus the engine suite.
+
 005 left four items open against loci-core, on the ground that the engine is not authored here.
 That reasoning held for *writing the patch* and not for *knowing whether the diagnosis was right*.
 Running the client against the local engine checkout closed both.
