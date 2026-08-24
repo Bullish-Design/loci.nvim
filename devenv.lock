@@ -17,22 +17,39 @@
         "type": "github"
       }
     },
-    "nixpkgs": {
+    "devman": {
       "inputs": {
-        "nixpkgs-src": "nixpkgs-src"
+        "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1782132010,
-        "narHash": "sha256-ZnAVHdVrotp80iIMm5CSR1fdxPlw7Uwmwxb+O/wsgZ8=",
-        "owner": "cachix",
-        "repo": "devenv-nixpkgs",
-        "rev": "12866ae2dddbc0ab8b329915f8072bb9c75bde89",
+        "lastModified": 1787578241,
+        "narHash": "sha256-h7fPWlanX1D5tQas/wgXiJWbtRef1+18UWbptJ3oNIE=",
+        "ref": "main",
+        "rev": "70c8e2f59883541f48a39534440f6b17d3dbef9f",
+        "revCount": 269,
+        "type": "git",
+        "url": "https://github.com/Bullish-Design/devman"
+      },
+      "original": {
+        "ref": "main",
+        "rev": "70c8e2f59883541f48a39534440f6b17d3dbef9f",
+        "type": "git",
+        "url": "https://github.com/Bullish-Design/devman"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1787135253,
+        "narHash": "sha256-RD2kNWCG+Bjo6h+JVjWVNntZs2GtRoeY2xHjts/FNkA=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
         "type": "github"
       },
       "original": {
-        "owner": "cachix",
-        "ref": "rolling",
-        "repo": "devenv-nixpkgs",
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
         "type": "github"
       }
     },
@@ -71,6 +88,25 @@
       }
     },
     "nixpkgs_2": {
+      "inputs": {
+        "nixpkgs-src": "nixpkgs-src"
+      },
+      "locked": {
+        "lastModified": 1782132010,
+        "narHash": "sha256-ZnAVHdVrotp80iIMm5CSR1fdxPlw7Uwmwxb+O/wsgZ8=",
+        "owner": "cachix",
+        "repo": "devenv-nixpkgs",
+        "rev": "12866ae2dddbc0ab8b329915f8072bb9c75bde89",
+        "type": "github"
+      },
+      "original": {
+        "owner": "cachix",
+        "ref": "rolling",
+        "repo": "devenv-nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_3": {
       "inputs": {
         "nixpkgs-src": "nixpkgs-src_2"
       },
@@ -115,7 +151,8 @@
     "root": {
       "inputs": {
         "devenv": "devenv",
-        "nixpkgs": "nixpkgs",
+        "devman": "devman",
+        "nixpkgs": "nixpkgs_2",
         "repoman": "repoman",
         "shellij": "shellij",
         "vendomat": "vendomat"
@@ -134,7 +171,7 @@
     },
     "vendomat": {
       "inputs": {
-        "nixpkgs": "nixpkgs_2",
+        "nixpkgs": "nixpkgs_3",
         "pyjutsu": "pyjutsu"
       },
       "locked": {
