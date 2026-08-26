@@ -32,7 +32,7 @@ inputs:
   # import is a PATH inside an input, never a flake output attribute, and the
   # file it resolves to must be named devenv.nix.
   devman:
-    url: "git+https://github.com/Bullish-Design/devman?ref=main&rev=70c8e2f59883541f48a39534440f6b17d3dbef9f"
+    url: "git+https://github.com/Bullish-Design/devman?ref=main&rev=50c4c2e841136496b05fc1bf1037c9eba0133db7"
 
 imports:
   - repoman
