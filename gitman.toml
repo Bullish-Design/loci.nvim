@@ -10,6 +10,3 @@ trunk = "main"
 #
 # Seeded at 0.1.3 to match the last hand-cut tag, so `gitman release patch` picks
 # up from the real history.
-[version]
-file = "VERSION"
-pattern = "{version}"
