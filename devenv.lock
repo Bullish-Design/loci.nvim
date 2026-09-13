@@ -36,19 +36,20 @@
     },
     "devman": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1789067929,
-        "narHash": "sha256-MLYTeJzk2eRAFThm2vGrkkBPdz+8cy2GGtIRrMt/OvY=",
-        "ref": "refs/tags/v0.5.1",
-        "rev": "8311f1434d6959ab0f50533cada8a451f5eab70e",
-        "revCount": 393,
+        "lastModified": 1789243182,
+        "narHash": "sha256-Pvs3mWxQmD/AMf5SQheZjd1rJicqnkGjeKFYywMBV3Q=",
+        "ref": "refs/tags/v0.5.2",
+        "rev": "8e7c3be6c8c02e7438cf3bb0b7be086b0e98ee12",
+        "revCount": 423,
         "type": "git",
         "url": "https://github.com/Bullish-Design/devman"
       },
       "original": {
-        "ref": "refs/tags/v0.5.1",
+        "ref": "refs/tags/v0.5.2",
+        "rev": "8e7c3be6c8c02e7438cf3bb0b7be086b0e98ee12",
         "type": "git",
         "url": "https://github.com/Bullish-Design/devman"
       }
@@ -88,18 +89,21 @@
       }
     },
     "nixpkgs": {
+      "inputs": {
+        "nixpkgs-src": "nixpkgs-src"
+      },
       "locked": {
-        "lastModified": 1787135253,
-        "narHash": "sha256-RD2kNWCG+Bjo6h+JVjWVNntZs2GtRoeY2xHjts/FNkA=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
+        "lastModified": 1782132010,
+        "narHash": "sha256-ZnAVHdVrotp80iIMm5CSR1fdxPlw7Uwmwxb+O/wsgZ8=",
+        "owner": "cachix",
+        "repo": "devenv-nixpkgs",
+        "rev": "12866ae2dddbc0ab8b329915f8072bb9c75bde89",
         "type": "github"
       },
       "original": {
-        "owner": "NixOS",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
+        "owner": "cachix",
+        "ref": "rolling",
+        "repo": "devenv-nixpkgs",
         "type": "github"
       }
     },
@@ -138,21 +142,18 @@
       }
     },
     "nixpkgs_2": {
-      "inputs": {
-        "nixpkgs-src": "nixpkgs-src"
-      },
       "locked": {
-        "lastModified": 1782132010,
-        "narHash": "sha256-ZnAVHdVrotp80iIMm5CSR1fdxPlw7Uwmwxb+O/wsgZ8=",
-        "owner": "cachix",
-        "repo": "devenv-nixpkgs",
-        "rev": "12866ae2dddbc0ab8b329915f8072bb9c75bde89",
+        "lastModified": 1787135253,
+        "narHash": "sha256-RD2kNWCG+Bjo6h+JVjWVNntZs2GtRoeY2xHjts/FNkA=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
         "type": "github"
       },
       "original": {
-        "owner": "cachix",
-        "ref": "rolling",
-        "repo": "devenv-nixpkgs",
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
         "type": "github"
       }
     },
@@ -243,13 +244,20 @@
       "flake": false,
       "locked": {
         "dir": "modules",
+        "lastModified": 1789232939,
+        "narHash": "sha256-2WI+AhgAzpFeck+Kg8twCkqMvaOhx3FPzUAoPk4AF40=",
+        "ref": "main",
+        "rev": "57473ad47365da67d7c4ad666cfc37facf94d21c",
+        "revCount": 164,
         "type": "git",
-        "url": "file:///home/andrew/Documents/Projects/repoman"
+        "url": "https://github.com/Bullish-Design/repoman"
       },
       "original": {
         "dir": "modules",
+        "ref": "main",
+        "rev": "57473ad47365da67d7c4ad666cfc37facf94d21c",
         "type": "git",
-        "url": "file:///home/andrew/Documents/Projects/repoman"
+        "url": "https://github.com/Bullish-Design/repoman"
       }
     },
     "repoman_2": {
@@ -272,8 +280,7 @@
     "root": {
       "inputs": {
         "devenv": "devenv",
-        "devman": "devman",
-        "nixpkgs": "nixpkgs_2",
+        "nixpkgs": "nixpkgs",
         "repoman": "repoman",
         "shellij": "shellij",
         "vendomat": "vendomat"
@@ -282,6 +289,7 @@
     "shellij": {
       "flake": false,
       "locked": {
+        "ref": "refs/heads/038-devman-migration",
         "type": "git",
         "url": "file:///home/andrew/Documents/Projects/shellij"
       },
@@ -362,6 +370,7 @@
     "vendomat": {
       "inputs": {
         "copyroom": "copyroom",
+        "devman": "devman",
         "docman": "docman",
         "gitman": "gitman",
         "nixpkgs": "nixpkgs_3",
@@ -373,7 +382,6 @@
         "uv2nix": "uv2nix_2"
       },
       "locked": {
-        "ref": "refs/heads/main",
         "type": "git",
         "url": "file:///home/andrew/Documents/Projects/vendomat"
       },
