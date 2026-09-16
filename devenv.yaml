@@ -5,13 +5,6 @@ inputs:
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling
 
-  # RepoMan meta-module: one import wires in the selected *man managers and their
-  # tasks/scripts/toolchains. Dev: a local path to repoman's modules/ dir.
-  # Fleet: github:Bullish-Design/repoman?dir=modules&ref=vX.Y.Z
-  repoman:
-    url: "git+https://github.com/Bullish-Design/repoman?dir=modules&ref=main&rev=57473ad47365da67d7c4ad666cfc37facf94d21c"
-    flake: false
-
   # vendomat: prebuilt wheels for native libs (pyjutsu) from the Nix store. The `git`
   # manager (gitman) depends on pyjutsu, whose maturin/Rust extension we DON'T compile
   # here — vendomat's module exports UV_FIND_LINKS so repoman-sync installs the
@@ -29,5 +22,4 @@ inputs:
     flake: false
 
 imports:
-  - repoman
   - vendomat/modules
