@@ -7,8 +7,10 @@
 { ... }:
 
 {
-  repoman.cliProvider = "venv";
-  vendor.toolchain.enable = false;
+  # Project 039: the store-toolchain opt-out moved to the tracked manifests --
+  # `cliProvider = "venv"` in .repoman/project.toml, and `[toolchain] enable =
+  # false` in vendomat.toml. Both modules now reach this repository from the
+  # system profile, so neither option belongs to an input declared here.
 
   # Python venv for uv-managed deps. The manager CLIs (copyroom, gitman) come from
   # the SYSTEM-WIDE toolchain venv (`repoman-sync --machine`), not this repo's venv.

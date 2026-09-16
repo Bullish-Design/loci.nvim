@@ -5,12 +5,12 @@ inputs:
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling
 
-  # vendomat: prebuilt wheels for native libs (pyjutsu) from the Nix store. The `git`
-  # manager (gitman) depends on pyjutsu, whose maturin/Rust extension we DON'T compile
-  # here — vendomat's module exports UV_FIND_LINKS so repoman-sync installs the
-  # `wheel:pyjutsu` entry from repoman.lock as a prebuilt wheel instead of building it.
-  vendomat:
-    url: "git+file:///home/andrew/Documents/Projects/vendomat"
+  # vendomat supplies prebuilt wheels for native libs (pyjutsu) from the Nix store.
+  # The `git` manager (gitman) depends on pyjutsu, whose maturin/Rust extension we
+  # DON'T compile here — vendomat's module exports UV_FIND_LINKS so repoman-sync
+  # installs the `wheel:pyjutsu` entry from repoman.lock as a prebuilt wheel instead
+  # of building it. Project 039: that module now reaches this repository from the
+  # system profile through the central devenv.local.nix, so no input is declared.
 
   # shellij: durable Zellij workbenches, installed by default (not a roster
   # manager) — RepoMan presence-imports shellij's own devenv module when this
@@ -20,6 +20,3 @@ inputs:
   shellij:
     url: "git+file:///home/andrew/Documents/Projects/shellij"
     flake: false
-
-imports:
-  - vendomat/modules
