@@ -1,5 +1,9 @@
 trunk = "main"
 
+[publish]
+verify = ["nix", "flake", "check", "--no-build"]
+verify_timeout = 1800
+
 # The release-tag semver source. Consumers pin this repo BY TAG
 # (nix-nvim: `github:Bullish-Design/loci.nvim?ref=vX.Y.Z`), so the tag is the
 # published interface and `gitman release` is the only sanctioned way to cut one.
