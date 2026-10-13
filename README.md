@@ -2,17 +2,14 @@
 
 The loci Neovim plugin (thin loci-lsp client) + the loci-lsp server binary.
 
-A [repoman](https://github.com/Bullish-Design/repoman)-managed [devenv](https://devenv.sh)
-project. RepoMan is always enabled. `.repoman/project.toml` selects the **copy**
-(copyroom — templating / convergence) and **git** (gitman — version control) managers.
+A [devenv](https://devenv.sh) project. The host profile provides **copyroom**
+(template convergence) and **gitman** (workspaces).
 
 ## Getting started
 
 ```bash
 devenv shell          # enter the pinned environment
-repoman-sync          # check that repoman is on PATH + generate the router skill
-repoman managers      # list the wired managers
-repoman doctor        # health-check the wiring + each manager
+copyroom status       # show how the project differs from its template
 ```
 
 ## Staying current with the template

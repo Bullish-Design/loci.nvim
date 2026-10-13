@@ -1,12 +1,9 @@
-# loci.nvim — repoman-enabled devenv.
+# loci.nvim — devenv.
 #
-# RepoMan is always on. The tracked .repoman/project.toml selects its manager
-# roster. This base project uses copyroom and gitman.
-{ ... }:
+# The host profile puts the managers (copyroom, gitman) on PATH.
+{ pkgs, ... }:
 
 {
-  repoman.enable = true;
-
   # Devman bootstraps its central declaration on the first shell entry and
   # reconciles the machine-local links and agent pool on the next entry.
   devman = {
@@ -15,8 +12,10 @@
     groups = [ "base" ];
   };
 
-  # The host profile puts the managers (copyroom, gitman) on PATH. RepoMan runs
-  # them by name. This repo keeps no repoman.lock and installs no manager.
+  # Runtime binaries that the host copyroom and the repo scripts shell out to.
+  # copyroom runs `git` and `patch`. scripts/check-local-engine.sh runs `git`.
+  packages = [ pkgs.git pkgs.gnupatch ];
+
   languages.python = {
     enable = true;
     venv.enable = true;

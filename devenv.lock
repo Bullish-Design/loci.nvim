@@ -72,23 +72,11 @@
         "type": "github"
       }
     },
-    "repoman": {
-      "flake": false,
-      "locked": {
-        "path": "/home/andrew/Documents/Projects/repoman/modules",
-        "type": "path"
-      },
-      "original": {
-        "path": "/home/andrew/Documents/Projects/repoman/modules",
-        "type": "path"
-      }
-    },
     "root": {
       "inputs": {
         "devenv": "devenv",
         "devman": "devman",
-        "nixpkgs": "nixpkgs",
-        "repoman": "repoman"
+        "nixpkgs": "nixpkgs"
       }
     }
   },

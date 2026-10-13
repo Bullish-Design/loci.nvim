@@ -4,7 +4,7 @@ The loci Neovim plugin (thin loci-lsp client) + the loci-lsp server binary.
 
 ## What this repo is
 A `template-nix`-derived repo that **hand-owns its own flake** (no templated
-`flake.nix` / `modules/` — `module_class = none`). Only the devenv/repoman skeleton
+`flake.nix` / `modules/` — `module_class = none`). Only the devenv skeleton
 is template-converged here. It is the **source of the editor DAG**:
 `loci-core → loci.nvim → nix-nvim → nix-terminal → nix-meta`.
 
@@ -39,12 +39,11 @@ It exports per-system **`packages`**, not option-modules:
 ## Conventions (inherited from template-nix — do not break)
 - Personal-use-only: hardcode `andrew`; no portability / multi-user ceremony.
 - In-repo ops go through the devenv: `devenv shell -- <cmd>`.
-- The host profile puts the managers (`copyroom`, `gitman`) on `PATH`, and RepoMan
-  runs them by name. There is no per-repo `repoman.lock`.
+- The host profile puts the managers (`copyroom`, `gitman`) on `PATH`. Run them by name.
+  Run `copyroom status` to see how this repo differs from its template.
 
 ## Inherited vs owned
-- **Inherited** (converged by CopyRoom): `devenv.{nix,yaml}`, `.gitignore`,
-  `.repoman/project.toml`.
+- **Inherited** (converged by CopyRoom): `devenv.{nix,yaml}`, `.gitignore`.
 - **Owned** (template seeds, you fill): the whole `flake.nix` / package build, docs, optional `scripts/`.
 
 ## Validate
