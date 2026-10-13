@@ -10,7 +10,7 @@ project. RepoMan is always enabled. `.repoman/project.toml` selects the **copy**
 
 ```bash
 devenv shell          # enter the pinned environment
-repoman-sync          # install the manager toolchain from repoman.lock
+repoman-sync          # check that repoman is on PATH + generate the router skill
 repoman managers      # list the wired managers
 repoman doctor        # health-check the wiring + each manager
 ```

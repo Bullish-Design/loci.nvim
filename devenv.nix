@@ -15,8 +15,8 @@
     groups = [ "base" ];
   };
 
-  # A Python venv hosts the manager CLIs (copyroom, gitman) that repoman-sync
-  # installs from repoman.lock — required even though this project isn't Python.
+  # The host profile puts the managers (copyroom, gitman) on PATH. RepoMan runs
+  # them by name. This repo keeps no repoman.lock and installs no manager.
   languages.python = {
     enable = true;
     venv.enable = true;
