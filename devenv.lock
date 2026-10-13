@@ -17,6 +17,25 @@
         "type": "github"
       }
     },
+    "devman": {
+      "flake": false,
+      "locked": {
+        "dir": "modules",
+        "lastModified": 1789067929,
+        "narHash": "sha256-MLYTeJzk2eRAFThm2vGrkkBPdz+8cy2GGtIRrMt/OvY=",
+        "ref": "refs/tags/v0.5.1",
+        "rev": "8311f1434d6959ab0f50533cada8a451f5eab70e",
+        "revCount": 393,
+        "type": "git",
+        "url": "https://github.com/Bullish-Design/devman"
+      },
+      "original": {
+        "dir": "modules",
+        "ref": "refs/tags/v0.5.1",
+        "type": "git",
+        "url": "https://github.com/Bullish-Design/devman"
+      }
+    },
     "nixpkgs": {
       "inputs": {
         "nixpkgs-src": "nixpkgs-src"
@@ -53,22 +72,23 @@
         "type": "github"
       }
     },
+    "repoman": {
+      "flake": false,
+      "locked": {
+        "path": "/home/andrew/Documents/Projects/repoman/modules",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/andrew/Documents/Projects/repoman/modules",
+        "type": "path"
+      }
+    },
     "root": {
       "inputs": {
         "devenv": "devenv",
+        "devman": "devman",
         "nixpkgs": "nixpkgs",
-        "shellij": "shellij"
-      }
-    },
-    "shellij": {
-      "flake": false,
-      "locked": {
-        "type": "git",
-        "url": "file:///home/andrew/Documents/Projects/shellij"
-      },
-      "original": {
-        "type": "git",
-        "url": "file:///home/andrew/Documents/Projects/shellij"
+        "repoman": "repoman"
       }
     }
   },
