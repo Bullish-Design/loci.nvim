@@ -41,8 +41,8 @@ It exports per-system **`packages`**, not option-modules:
 - In-repo ops go through the devenv: `devenv shell -- <cmd>`.
 
 ## Inherited vs owned
-- **Inherited** (converged by CopyRoom): `devenv.{nix,yaml}`, `repoman.lock`,
-  `.gitignore`.
+- **Inherited** (converged by CopyRoom): `devenv.{nix,yaml}`, `.gitignore`,
+  `.repoman/project.toml`.
 - **Owned** (template seeds, you fill): the whole `flake.nix` / package build, docs, optional `scripts/`.
 
 ## Validate

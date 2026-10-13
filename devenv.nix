@@ -16,7 +16,7 @@
   };
 
   # A Python venv hosts the manager CLIs (copyroom, gitman) that repoman-sync
-  # installs from repoman.lock — required even though this project isn't Python.
+  # installs — required even though this project isn't Python.
   languages.python = {
     enable = true;
     venv.enable = true;
