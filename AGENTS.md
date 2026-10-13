@@ -39,6 +39,8 @@ It exports per-system **`packages`**, not option-modules:
 ## Conventions (inherited from template-nix — do not break)
 - Personal-use-only: hardcode `andrew`; no portability / multi-user ceremony.
 - In-repo ops go through the devenv: `devenv shell -- <cmd>`.
+- The host profile puts the managers (`copyroom`, `gitman`) on `PATH`, and RepoMan
+  runs them by name. There is no per-repo `repoman.lock`.
 
 ## Inherited vs owned
 - **Inherited** (converged by CopyRoom): `devenv.{nix,yaml}`, `.gitignore`,
