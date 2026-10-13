@@ -3,13 +3,11 @@
     "author_email": "BullishDesignEngineering@gmail.com",
     "author_name": "Bullish Design",
     "description": "The loci Neovim plugin (thin loci-lsp client) + the loci-lsp server binary.",
-    "devman_ref": "v0.5.1",
     "module_class": "none",
     "module_file": null,
     "module_name": null,
     "project_id": "loci.nvim",
-    "project_name": "loci.nvim",
-    "repoman_dev_root": "/home/andrew/Documents/Projects"
+    "project_name": "loci.nvim"
   },
   "composer_digest": "bff36234f8e9eb7ca17996861b6cf7c73d7405bc5c742885561bbede1f274cd7",
   "layers": {
@@ -18,67 +16,67 @@
         "author_email": "BullishDesignEngineering@gmail.com",
         "author_name": "Bullish Design",
         "description": "The loci Neovim plugin (thin loci-lsp client) + the loci-lsp server binary.",
-        "devman_ref": "v0.5.1",
         "module_class": "none",
         "module_file": null,
         "module_name": null,
         "project_id": "loci.nvim",
-        "project_name": "loci.nvim",
-        "repoman_dev_root": "/home/andrew/Documents/Projects"
+        "project_name": "loci.nvim"
       },
       "composer_digest": "bff36234f8e9eb7ca17996861b6cf7c73d7405bc5c742885561bbede1f274cd7",
-      "manifest_digest": "472f9193a355621b624098d5313a955f5c6dc183cd75531a2cc0bb5e554a738a",
+      "manifest_digest": "c0e4599228852f02d395301d22cb46236ee4ba3972131c28e910d79bf022604f",
       "omissions": [
+        ".devman/project.toml",
+        ".repoman/project.toml",
+        "README.md",
+        "devenv.nix",
+        "devenv.yaml",
         "repoman.lock"
       ],
       "owners": {
         ".gitignore": "static:static/dot-gitignore",
-        ".repoman/project.toml": "repoman_project_toml",
         "AGENTS.md": "agents_md",
-        "CLAUDE.md": "symlink:AGENTS.md",
-        "README.md": "readme_md",
-        "devenv.nix": "devenv_nix",
-        "devenv.yaml": "devenv_yaml"
+        "CLAUDE.md": "symlink:AGENTS.md"
       },
       "pin": {
-        "commit": "18330502e35cdd8ab7e54f788ab7627011363ea6",
-        "ref": "v0.4.2",
+        "commit": "01074ceacfd00c5584a6e59c743e1f5e68ced3df",
+        "ref": "main",
         "repo": "/home/andrew/Documents/Projects/template-nix",
         "subdir": "source/base"
       },
-      "render_digest": "c2cb6e078072edde5ddf37c6578c8e9cd7b40a1a10891608915aff5443a1efa7",
-      "revision": 2,
+      "render_digest": "960f0d96ca13d82294c079e1f421aa49c5fa330a3e821ad1921b7fc9f893ec3e",
+      "revision": 3,
       "source": "/home/andrew/Documents/Projects/template-nix/source/base",
-      "source_digest": "2932bb3a998bcd13254bdfe7b75e5b67a30ce1b133fae4652d2ee4a9dca0c57f",
+      "source_digest": "958844a639158dbba998d7ebc4c2ea5aed5e90b9918837a2dbbb8895443a1355",
       "templateer_digest": "286c87491394aab4eca7f82e66bf4560ceee464eea82ed763dd246b51bb8c881",
       "templateer_version": "0.6.0"
     }
   },
-  "manifest_digest": "472f9193a355621b624098d5313a955f5c6dc183cd75531a2cc0bb5e554a738a",
+  "manifest_digest": "c0e4599228852f02d395301d22cb46236ee4ba3972131c28e910d79bf022604f",
   "omissions": [
+    ".devman/project.toml",
+    ".repoman/project.toml",
+    "README.md",
+    "devenv.nix",
+    "devenv.yaml",
     "repoman.lock"
   ],
   "owners": {
     ".gitignore": "static:static/dot-gitignore",
-    ".repoman/project.toml": "repoman_project_toml",
     "AGENTS.md": "agents_md",
-    "CLAUDE.md": "symlink:AGENTS.md",
-    "README.md": "readme_md",
-    "devenv.nix": "devenv_nix",
-    "devenv.yaml": "devenv_yaml"
+    "CLAUDE.md": "symlink:AGENTS.md"
   },
   "pin": {
-    "commit": "18330502e35cdd8ab7e54f788ab7627011363ea6",
-    "ref": "v0.4.2",
+    "commit": "01074ceacfd00c5584a6e59c743e1f5e68ced3df",
+    "ref": "main",
     "repo": "/home/andrew/Documents/Projects/template-nix",
     "subdir": "source/base"
   },
   "project_id": "2671dc4508004146a3378f5a4dfada57",
-  "render_digest": "c2cb6e078072edde5ddf37c6578c8e9cd7b40a1a10891608915aff5443a1efa7",
-  "revision": 2,
+  "render_digest": "960f0d96ca13d82294c079e1f421aa49c5fa330a3e821ad1921b7fc9f893ec3e",
+  "revision": 3,
   "schema": 2,
   "source": "/home/andrew/Documents/Projects/template-nix/source/base",
-  "source_digest": "2932bb3a998bcd13254bdfe7b75e5b67a30ce1b133fae4652d2ee4a9dca0c57f",
+  "source_digest": "958844a639158dbba998d7ebc4c2ea5aed5e90b9918837a2dbbb8895443a1355",
   "templateer_digest": "286c87491394aab4eca7f82e66bf4560ceee464eea82ed763dd246b51bb8c881",
   "templateer_version": "0.6.0"
 }
