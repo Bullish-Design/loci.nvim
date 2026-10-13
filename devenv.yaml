@@ -4,11 +4,3 @@
 inputs:
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling
-
-  # Devman: the central automation plane used by every generated repository.
-  devman:
-    url: "git+https://github.com/Bullish-Design/devman?dir=modules&ref=refs/tags/v0.5.1"
-    flake: false
-
-imports:
-  - devman
