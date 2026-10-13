@@ -1,0 +1,27 @@
+# devenv
+.devenv/
+.devenv.flake.nix
+devenv.local.nix
+
+# direnv
+.direnv/
+
+# python venv / caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# copyroom scratch (template-edit previews/worktrees)
+.copyroom/
+
+# Agent-files convention (see AGENTS.md): .agents/skills/ (skills) are tracked,
+# as are AGENTS.md and CLAUDE.md. The rest of .agents/ (e.g. .agents/pi/) is
+# platform/tool runtime state and stays ignored — .agents/ is dual-use on purpose.
+.agents/**
+!.agents/skills/
+!.agents/skills/**
+!AGENTS.md
+!CLAUDE.md
