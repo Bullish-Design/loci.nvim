@@ -3,8 +3,8 @@
 The loci Neovim plugin (thin loci-lsp client) + the loci-lsp server binary.
 
 A [repoman](https://github.com/Bullish-Design/repoman)-managed [devenv](https://devenv.sh)
-project. RepoMan is always enabled; this repo wires the core managers **copy**
-(copyroom — templating / convergence) and **git** (gitman — version control).
+project. RepoMan is always enabled. `.repoman/project.toml` selects the **copy**
+(copyroom — templating / convergence) and **git** (gitman — version control) managers.
 
 ## Getting started
 
@@ -17,10 +17,17 @@ repoman doctor        # health-check the wiring + each manager
 
 ## Staying current with the template
 
-This project was generated from `template-nix`. Pull template updates with:
+This project uses local Templateer sources from `template-nix`. Update its base
+layer to a released ref:
 
 ```bash
-copyroom update          # three-way merge from the latest template tag
+copyroom update --ref <template-ref>
+```
+
+Projects with the `module` layer must update that layer too:
+
+```bash
+copyroom update --layer module --ref <template-ref>
 ```
 
 ## Author

@@ -17,11 +17,11 @@ __pycache__/
 # copyroom scratch (template-edit previews/worktrees)
 .copyroom/
 
-# Agent-files convention (see AGENTS.md): .agents/skills/ (skills) are tracked,
-# as are AGENTS.md and CLAUDE.md. The rest of .agents/ (e.g. .agents/pi/) is
-# platform/tool runtime state and stays ignored — .agents/ is dual-use on purpose.
-.agents/**
-!.agents/skills/
-!.agents/skills/**
+# Agent-files convention: the central Devman link plane owns .agents and
+# .claude. Both are symlinks, and neither is tracked in this project.
+# Write the names with no trailing slash. A trailing slash matches only a real
+# directory, not a symlink.
 !AGENTS.md
 !CLAUDE.md
+.agents
+.claude

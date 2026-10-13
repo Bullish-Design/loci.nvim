@@ -12,8 +12,8 @@ skeleton is template-converged here.
 - In-repo ops go through the devenv: `devenv shell -- <cmd>`.
 
 ## Inherited vs owned
-- **Inherited** (converged by `copyroom update`, do NOT hand-edit): `devenv.{nix,yaml}`,
-  `repoman.lock`, `copyroom.project.yml`, `.copier-answers.yml`, `.gitignore`.
+- **Inherited** (converged by CopyRoom): `devenv.{nix,yaml}`, `repoman.lock`,
+  `.gitignore`.
 - **Owned** (template seeds, you fill): the whole `flake.nix` / package build, docs, optional `scripts/`.
 
 ## Validate
