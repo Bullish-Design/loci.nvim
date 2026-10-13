@@ -426,24 +426,9 @@ project 004's fidelity work, the diagnostics and `E211` fixes, and all of 005. *
 the fleet.** Landing on `main` changes nothing downstream, because the published interface is the
 tag.
 
-The update flow, once a release is wanted:
-
-```bash
-# 1. loci.nvim — the tag is the published interface (gitman.toml says so)
-gitman release minor                      # bump -> tag vX.Y.Z -> push tag
-
-# 2. nix-nvim — the only direct consumer
-#    edit flake.nix:  loci-nvim.url = "github:Bullish-Design/loci.nvim?ref=vX.Y.Z";
-nix flake update loci-nvim && gitman save … && gitman land && gitman push
-
-# 3. nix-terminal, then nix-meta — transitive; each just re-locks its parent
-nix flake update nix-nvim      # in nix-terminal
-nix flake update nix-terminal  # in nix-meta
-# 4. rebuild
-```
-
-**Not run.** Cutting a tag and re-locking four repos publishes work and changes the user's daily
-environment; that is the user's call, not a cleanup task. The flow above is the whole of it.
+**Not run.** The release procedure is undefined. Cutting a tag and re-locking consumer flakes
+publishes work and changes the daily environment. Define a replacement procedure before starting
+that work.
 
 ---
 
