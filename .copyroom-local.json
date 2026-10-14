@@ -23,7 +23,7 @@
         "project_name": "loci.nvim"
       },
       "composer_digest": "bff36234f8e9eb7ca17996861b6cf7c73d7405bc5c742885561bbede1f274cd7",
-      "manifest_digest": "c0e4599228852f02d395301d22cb46236ee4ba3972131c28e910d79bf022604f",
+      "manifest_digest": "39e9292eae5911300e58f2d669ad136305a43807c08b571a2eaaba046de9aaa5",
       "omissions": [
         ".devman/project.toml",
         ".repoman/project.toml",
@@ -38,20 +38,20 @@
         "CLAUDE.md": "symlink:AGENTS.md"
       },
       "pin": {
-        "commit": "01074ceacfd00c5584a6e59c743e1f5e68ced3df",
-        "ref": "main",
+        "commit": "435bc637e26c5118faa2f0322b7a963c03a5d788",
+        "ref": "v0.5.0",
         "repo": "/home/andrew/Documents/Projects/template-nix",
         "subdir": "source/base"
       },
-      "render_digest": "960f0d96ca13d82294c079e1f421aa49c5fa330a3e821ad1921b7fc9f893ec3e",
-      "revision": 3,
+      "render_digest": "1d10c0f25661d2343c02240c995afa65f9a995256578e5905a6df2d1db37b970",
+      "revision": 4,
       "source": "/home/andrew/Documents/Projects/template-nix/source/base",
-      "source_digest": "958844a639158dbba998d7ebc4c2ea5aed5e90b9918837a2dbbb8895443a1355",
+      "source_digest": "8fd00879024bee58fd01e1af02befc41464c11bb4acb94816cdc536a9d2232b2",
       "templateer_digest": "286c87491394aab4eca7f82e66bf4560ceee464eea82ed763dd246b51bb8c881",
       "templateer_version": "0.6.0"
     }
   },
-  "manifest_digest": "c0e4599228852f02d395301d22cb46236ee4ba3972131c28e910d79bf022604f",
+  "manifest_digest": "39e9292eae5911300e58f2d669ad136305a43807c08b571a2eaaba046de9aaa5",
   "omissions": [
     ".devman/project.toml",
     ".repoman/project.toml",
@@ -66,17 +66,17 @@
     "CLAUDE.md": "symlink:AGENTS.md"
   },
   "pin": {
-    "commit": "01074ceacfd00c5584a6e59c743e1f5e68ced3df",
-    "ref": "main",
+    "commit": "435bc637e26c5118faa2f0322b7a963c03a5d788",
+    "ref": "v0.5.0",
     "repo": "/home/andrew/Documents/Projects/template-nix",
     "subdir": "source/base"
   },
   "project_id": "2671dc4508004146a3378f5a4dfada57",
-  "render_digest": "960f0d96ca13d82294c079e1f421aa49c5fa330a3e821ad1921b7fc9f893ec3e",
-  "revision": 3,
+  "render_digest": "1d10c0f25661d2343c02240c995afa65f9a995256578e5905a6df2d1db37b970",
+  "revision": 4,
   "schema": 2,
   "source": "/home/andrew/Documents/Projects/template-nix/source/base",
-  "source_digest": "958844a639158dbba998d7ebc4c2ea5aed5e90b9918837a2dbbb8895443a1355",
+  "source_digest": "8fd00879024bee58fd01e1af02befc41464c11bb4acb94816cdc536a9d2232b2",
   "templateer_digest": "286c87491394aab4eca7f82e66bf4560ceee464eea82ed763dd246b51bb8c881",
   "templateer_version": "0.6.0"
 }
