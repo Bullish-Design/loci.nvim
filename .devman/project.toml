@@ -1,4 +1,0 @@
-schema = 1
-project = "loci.nvim"
-groups = ["base"]
-policy = "stable"
